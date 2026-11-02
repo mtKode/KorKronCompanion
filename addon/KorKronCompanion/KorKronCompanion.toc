@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: |cffd4af37Kor'kron Companion|r
+## Notes: Logs world PvP engagements with your guild, shares them between guildies and fills in battle reports.
+## Author: Martin
+## Version: 0.1.0
+## SavedVariables: KorKronCompanionDB
+## IconTexture: Interface\Icons\INV_BannerPVP_01
+
+Core.lua
+Theme.lua
+Report.lua
+Ledger.lua
+Summary.lua
+Tracker.lua
+Sync.lua
+UI.lua
+Commands.lua

@@ -1,0 +1,20 @@
+# Editors and OS
+.vs/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Build output (zips for guildies)
+dist/
+*.zip
+
+# Saved game data copied in for testing (contains your characters' logs)
+WTF/
+SavedVariables/
+KorKronCompanion.lua.bak

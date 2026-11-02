@@ -1,0 +1,148 @@
+--[[
+  /kkc                 recent engagements (also: /kkc log, /kkc log all for minor ones too)
+  /kkc card [n]        battle card for engagement n (default: the latest notable one)
+  /kkc copy [n]        battle report text straight to the copy box
+  /kkc week | day | lastweek    war report window (your fights) for that period
+  /kkc guild [n]       war report window on the guild feed tab, or the battle card of guild feed fight n
+  /kkc notify off|quiet|toast|prompt     how much the addon bothers you (default toast)
+  /kkc all on|off      notify you even when you're not the initiator
+  /kkc ledger          your War Ledger totals
+  /kkc test            a made-up engagement to preview the toast, card and texts
+  /kkc close           close the open engagement now instead of waiting
+  /kkc debug           which game APIs and restrictions this client has (post the output)
+  /kkc reset           wipe the log (the ledger stays)
+]]
+
+local _, KKC = ...
+
+local function pick(n)
+    local log = KKC.db.log
+    n = tonumber(n)
+    if n then return log[n] end
+    for _, e in ipairs(log) do if not e.minor then return e end end
+    return log[1]
+end
+
+local function yesNo(v)
+    if v == nil then return "nil" end
+    if not KKC.readable(v) then return "|cffffd100secret|r" end
+    return v and "|cff60ff60yes|r" or "|cffff6060no|r"
+end
+
+local function debug()
+    local version, build, _, interface = GetBuildInfo()
+    KKC.say(("Kor'kron Companion %s on %s (%s), interface %s"):format(KKC.VERSION, tostring(version), tostring(build), tostring(interface)))
+
+    local available, reason
+    if C_DamageMeter and C_DamageMeter.IsDamageMeterAvailable then available, reason = KKC.try(C_DamageMeter.IsDamageMeterAvailable) end
+    KKC.say(("  damage meter: %s %s"):format(yesNo(available), KKC.readable(reason) and reason or ""))
+    KKC.say("  meter enums: " .. yesNo(Enum and Enum.DamageMeterType ~= nil and Enum.DamageMeterSessionType ~= nil))
+    if C_CombatLog and C_CombatLog.IsCombatLogRestricted then
+        KKC.say("  combat log restricted: " .. yesNo(KKC.try(C_CombatLog.IsCombatLogRestricted)))
+    end
+    KKC.say("  CombatLogGetCurrentEventInfo: " .. yesNo(type(CombatLogGetCurrentEventInfo) == "function"))
+    KKC.say("  issecretvalue: " .. yesNo(type(issecretvalue) == "function"))
+
+    local RA = C_RestrictedActions
+    if RA and RA.IsAddOnRestrictionActive and Enum and Enum.AddOnRestrictionType then
+        local active = {}
+        for name, value in pairs(Enum.AddOnRestrictionType) do
+            if KKC.try(RA.IsAddOnRestrictionActive, value) then active[#active + 1] = name end
+        end
+        KKC.say("  restrictions active now: " .. (#active > 0 and table.concat(active, ", ") or "none"))
+    end
+
+    KKC.say(("  honor kill patterns: %d (should be 4)"):format(KKC.Tracker.HonorPatternCount()))
+    KKC.say("  in guild: " .. yesNo(IsInGuild()) .. ", addon prefix registered: " .. tostring(KKC.Sync.prefixRegistered))
+    KKC.say("  chat lockdown: " .. yesNo(C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown)))
+
+    local D = C_Discord
+    if D and D.GetGuildLinkStatus then
+        local linked, channel, server = KKC.try(D.GetGuildLinkStatus)
+        KKC.say(("  Discord: enabled %s, guild linked %s %s"):format(yesNo(D.IsEnabled and KKC.try(D.IsEnabled)), yesNo(linked),
+            (KKC.readable(server) and server or "") .. " " .. (KKC.readable(channel) and channel and ("#" .. channel) or "")))
+    else
+        KKC.say("  Discord API: " .. yesNo(false))
+    end
+
+    local first, second = UnitName("player")
+    KKC.say(("  names: UnitName = [%s] [%s], full = [%s], regional unique: %s"):format(tostring(first), tostring(second),
+        tostring(KKC.me()), yesNo(RegionalUniqueNamesEnabled and KKC.try(RegionalUniqueNamesEnabled))))
+    KKC.say(("  raw names seen: honor [%s], meter [%s], addon sender [%s]"):format(
+        tostring(KKC.raw.honor or "-"), tostring(KKC.raw.meter or "-"), tostring(KKC.raw.sender or "-")))
+
+    local open = KKC.Tracker.Open()
+    KKC.say(("  open engagement: %s, logged: %d, guild feed: %d"):format(open and KKC.Report.Headline(open) or "none", #KKC.db.log, #KKC.db.feed))
+    local from, to = KKC.Summary.Range("week")
+    KKC.say(("  this week: %s to %s"):format(date("%a %d %b %H:%M", from), date("%a %d %b %H:%M", to)))
+    KKC.debugErrors = true
+    KKC.say("  errors inside the addon are printed to chat from now on (until /reload).")
+end
+
+local commands = {}
+
+commands.log = function(arg) KKC.UI.PrintLog(arg == "all") end
+
+commands.card = function(arg)
+    local e = pick(arg)
+    if not e then return KKC.say("nothing logged yet. Try |cffffd100/kkc test|r.") end
+    KKC.UI.ShowCard(e)
+end
+
+commands.copy = function(arg)
+    local e = pick(arg)
+    if not e then return KKC.say("nothing logged yet.") end
+    KKC.UI.CopyReport(e)
+end
+
+commands.week = function() KKC.UI.ShowSummary("mine", "week") end
+commands.day = function() KKC.UI.ShowSummary("mine", "day") end
+commands.lastweek = function() KKC.UI.ShowSummary("mine", "lastweek") end
+commands.summary = commands.week
+
+commands.guild = function(arg)
+    local n = tonumber(arg)
+    if not n then return KKC.UI.ShowSummary("guild", "week") end
+    local e = KKC.db.feed[n]
+    if not e then return KKC.say("no guild feed fight " .. n .. ".") end
+    KKC.UI.ShowCard(e)
+end
+
+commands.notify = function(arg)
+    local valid = { off = true, quiet = true, toast = true, prompt = true }
+    if valid[arg] then KKC.settings().notify = arg end
+    KKC.say("notify: |cffffd100" .. KKC.settings().notify .. "|r (off, quiet = one chat line, toast, prompt = open the card)")
+end
+
+commands.all = function(arg)
+    if arg == "on" then KKC.settings().promptAll = true elseif arg == "off" then KKC.settings().promptAll = false end
+    KKC.say("notify when not the initiator: " .. (KKC.settings().promptAll and "on" or "off"))
+end
+
+commands.ledger = function() KKC.Ledger.Print() end
+
+commands.test = function()
+    local e = KKC.Tracker.TestEngagement()
+    KKC.UI.Notify(e, true)
+end
+
+commands.close = function()
+    if not KKC.Tracker.Open() then return KKC.say("no open engagement.") end
+    KKC.Tracker.CloseEngagement()
+end
+
+commands.debug = debug
+
+commands.reset = function()
+    wipe(KKC.db.log)
+    KKC.say("log cleared.")
+end
+
+SLASH_KORKRONCOMPANION1 = "/kkc"
+SLASH_KORKRONCOMPANION2 = "/korkron"
+SlashCmdList.KORKRONCOMPANION = function(msg)
+    local cmd, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
+    local fn = commands[cmd ~= "" and cmd or "log"]
+    if fn then return fn(arg) end
+    KKC.say("commands: log, card [n], copy [n], week, day, lastweek, guild [n], notify off|quiet|toast|prompt, all on|off, ledger, test, close, debug, reset")
+end
