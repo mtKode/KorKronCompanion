@@ -10,6 +10,9 @@ Desktop.ini
 # Claude Code local settings
 .claude/settings.local.json
 
+# Local install helper (machine-specific paths)
+install-addon.ps1
+
 # Build output (zips for guildies)
 dist/
 *.zip
