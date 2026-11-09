@@ -1,12 +1,15 @@
 --[[
-  /kkc                 recent engagements (also: /kkc log, /kkc log all for minor ones too)
-  /kkc card [n]        battle card for engagement n (default: the latest notable one)
+  /kkc                 open (or close) the Hall of the Kor'kron
+  /kkc log [all]       recent battles in chat (all: with skirmishes)
+  /kkc card [n]        battle card for battle n (default: the latest notable one)
   /kkc copy [n]        battle report text straight to the copy box
-  /kkc week | day | lastweek    war report window (your fights) for that period
-  /kkc guild [n]       war report window on the guild feed tab, or the battle card of guild feed fight n
-  /kkc notify off|quiet|toast|prompt     how much the addon bothers you (default toast)
+  /kkc day | week | lastweek | month | lastmonth    the hall's chronicle for that period
+  /kkc battles | ledger | settings                  the hall on that section
+  /kkc guild [n]       the hall's From the field section, or the battle card of guild feed battle n
+  /kkc notify off|quiet|toast|prompt     how you're told about a battle (default quiet: one chat line)
   /kkc all on|off      notify you even when you're not the initiator
-  /kkc ledger          your War Ledger totals
+  /kkc sync on|off     share battles with guildies over hidden guild messages (off by default)
+  /kkc ledger chat     your War Ledger totals in chat
   /kkc test            a made-up engagement to preview the toast, card and texts
   /kkc close           close the open engagement now instead of waiting
   /kkc debug           which game APIs and restrictions this client has (post the output)
@@ -55,7 +58,7 @@ local function debug()
     KKC.say(("  honor kill patterns: %d (should be 4)"):format(KKC.Tracker.HonorPatternCount()))
     KKC.say("  in guild: " .. yesNo(IsInGuild()) .. ", addon prefix registered: " .. tostring(KKC.Sync.prefixRegistered))
     local st = KKC.Sync.stats
-    KKC.say(("  guild sync: %d sent, %d refused%s, %d given up, %d waiting"):format(st.ok, st.refused,
+    KKC.say(("  guild sync %s: %d sent, %d refused%s, %d given up, %d waiting"):format(KKC.settings().sync and "on" or "off", st.ok, st.refused,
         st.lastCode and (" (last code " .. tostring(st.lastCode) .. ")") or "", st.dropped, KKC.Sync.Pending()))
     KKC.say("  chat lockdown: " .. yesNo(C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown)))
 
@@ -98,10 +101,13 @@ commands.copy = function(arg)
     KKC.UI.CopyReport(e)
 end
 
-commands.week = function() KKC.UI.ShowSummary("mine", "week") end
-commands.day = function() KKC.UI.ShowSummary("mine", "day") end
-commands.lastweek = function() KKC.UI.ShowSummary("mine", "lastweek") end
+commands.hall = function() KKC.Hub.Toggle() end
+for _, period in ipairs({ "day", "week", "lastweek", "month", "lastmonth" }) do
+    commands[period] = function() KKC.Hub.Show("chronicle", period) end
+end
 commands.summary = commands.week
+commands.battles = function() KKC.Hub.Show("battles") end
+commands.settings = function() KKC.Hub.Show("settings") end
 
 commands.guild = function(arg)
     local n = tonumber(arg)
@@ -122,7 +128,16 @@ commands.all = function(arg)
     KKC.say("notify when not the initiator: " .. (KKC.settings().promptAll and "on" or "off"))
 end
 
-commands.ledger = function() KKC.Ledger.Print() end
+commands.sync = function(arg)
+    if arg == "on" then KKC.settings().sync = true elseif arg == "off" then KKC.settings().sync = false end
+    KKC.say("guild sync: |cffffd100" .. (KKC.settings().sync and "on" or "off") .. "|r"
+        .. (KKC.settings().sync and " (notable battles are shared with guildies who run the addon)" or " (nothing is sent or read)"))
+end
+
+commands.ledger = function(arg)
+    if arg == "chat" then return KKC.Ledger.Print() end
+    KKC.Hub.Show("ledger")
+end
 
 commands.test = function()
     local e = KKC.Tracker.TestEngagement()
@@ -145,7 +160,8 @@ SLASH_KORKRONCOMPANION1 = "/kkc"
 SLASH_KORKRONCOMPANION2 = "/korkron"
 SlashCmdList.KORKRONCOMPANION = function(msg)
     local cmd, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
-    local fn = commands[cmd ~= "" and cmd or "log"]
+    local fn = commands[cmd ~= "" and cmd or "hall"]
     if fn then return fn(arg) end
-    KKC.say("commands: log, card [n], copy [n], week, day, lastweek, guild [n], notify off|quiet|toast|prompt, all on|off, ledger, test, close, debug, reset")
+    KKC.say("commands: (none) opens the hall, log, card [n], copy [n], day, week, lastweek, month, lastmonth, battles, ledger, "
+        .. "settings, guild [n], sync on|off, notify off|quiet|toast|prompt, all on|off, test, close, debug, reset")
 end

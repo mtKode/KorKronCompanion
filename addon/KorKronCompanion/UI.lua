@@ -87,7 +87,7 @@ end
 
 local card
 local ROWS = 14
-local ROW_TOP, ROW_STEP = -150, 17
+local ROW_TOP, ROW_STEP = -178, 17
 
 local function discordLine()
     local D = C_Discord
@@ -134,34 +134,39 @@ local function setRows(rows, list, fill)
 end
 
 local function buildCard()
-    local f = panel("KorKronCompanionCard", 660, 580, "Battle Report") -- wide: Forever names are "First Surname"
+    local f = panel("KorKronCompanionCard", 660, 610, "Battle Report") -- wide: Forever names are "First Surname"
     f:SetPoint("CENTER", 0, 10)
 
+    -- Everything stays inside the iron border (about 36 px on each side).
     f.place = Theme.Text(f, 22, "CENTER", true)
     f.place:SetPoint("TOP", 0, -48)
     f.when = Theme.Text(f, 12, "CENTER")
     f.when:SetPoint("TOP", f.place, "BOTTOM", 0, -4)
     f.size = Theme.Text(f, 12, "CENTER")
     f.size:SetPoint("TOP", f.when, "BOTTOM", 0, -4)
+    f.size:SetWidth(580)
+    f.first = Theme.Text(f, 12, "CENTER")
+    f.first:SetPoint("TOP", f.size, "BOTTOM", 0, -3)
+    f.first:SetWidth(580)
     local top = Theme.Divider(f, 420)
-    top:SetPoint("TOP", f.size, "BOTTOM", 0, -2)
+    top:SetPoint("TOP", f.first, "BOTTOM", 0, -2)
 
     f.membersHeader = Theme.Text(f, 16, "LEFT", true)
-    f.membersHeader:SetPoint("TOPLEFT", 32, -128)
+    f.membersHeader:SetPoint("TOPLEFT", 40, ROW_TOP + 22)
     f.enemiesHeader = Theme.Text(f, 16, "LEFT", true)
-    f.enemiesHeader:SetPoint("TOPLEFT", 344, -128)
-    f.memberRows = makeRows(f, 32, 292)
-    f.enemyRows = makeRows(f, 344, 284)
+    f.enemiesHeader:SetPoint("TOPLEFT", 344, ROW_TOP + 22)
+    f.memberRows = makeRows(f, 40, 288)
+    f.enemyRows = makeRows(f, 344, 276)
 
     local bottom = Theme.Divider(f, 420)
-    bottom:SetPoint("BOTTOM", 0, 140)
+    bottom:SetPoint("BOTTOM", 0, 160)
     f.descLabel = Theme.Text(f, 15, "LEFT", true)
-    f.descLabel:SetPoint("BOTTOMLEFT", 34, 116)
+    f.descLabel:SetPoint("BOTTOMLEFT", 42, 136)
     f.descLabel:SetText(Theme.BLOOD .. "Account of the battle|r")
 
     local box = CreateFrame("Frame", nil, f)
-    box:SetPoint("BOTTOMLEFT", 30, 60)
-    box:SetPoint("BOTTOMRIGHT", -30, 60)
+    box:SetPoint("BOTTOMLEFT", 38, 80)
+    box:SetPoint("BOTTOMRIGHT", -38, 80)
     box:SetHeight(52)
     local boxBg = box:CreateTexture(nil, "BACKGROUND")
     boxBg:SetAllPoints()
@@ -181,19 +186,23 @@ local function buildCard()
     f.desc = desc
 
     f.discord = Theme.Text(f, 11, "CENTER")
-    f.discord:SetPoint("BOTTOM", 0, 44)
+    f.discord:SetPoint("BOTTOM", 0, 62)
 
     f.buttons = {
         Theme.Button(f, "Scribe report", 124, "Copy the battle report text (Date, Time, Brief Description and the details) to paste into the Discord post.",
             function() UI.CopyReport(f.engagement) end),
         Theme.Button(f, "Sound the horn", 124, "Post a one-line account of this battle in guild chat. If guild chat is linked, it reaches Discord too.",
             function() UI.Share(f.engagement) end),
-        Theme.Button(f, "Capture likeness", 130, "Take a screenshot of this card, without the buttons, to attach to the battle report as proof of who fought.",
+        Theme.Button(f, "Capture likeness", 130, "Hides these buttons for a few seconds: press Print Screen to save the card as proof of who fought.",
             function() UI.Screenshot() end),
         Theme.Button(f, "Close", 90, nil, function() f:Hide() end),
     }
-    f.buttons[1]:SetPoint("BOTTOMLEFT", 30, 16)
+    -- Centered row, clear of the bottom border.
+    f.buttons[1]:SetPoint("BOTTOMLEFT", 66, 30)
     for i = 2, #f.buttons do f.buttons[i]:SetPoint("LEFT", f.buttons[i - 1], "RIGHT", 8, 0) end
+    f.hint = Theme.Text(f, 13, "CENTER")
+    f.hint:SetPoint("BOTTOM", 0, 34)
+    f.hint:Hide()
     return f
 end
 
@@ -205,8 +214,9 @@ local function fillCard(e)
     card.when:SetText(Theme.SOFT .. where .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start) .. "|r")
     local ambushed = KKC.Ambushed(e)
     local opening = ambushed and (Theme.BLOOD .. "Ambushed|r  ~  ") or (ambushed == false and "We struck first  ~  " or "")
-    card.size:SetText(("%s%d against %d  ~  %s of battle  ~  %d slain  ~  first into battle: %s%s"):format(
-        opening, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills, KKC.Initiator(e) or "?",
+    card.size:SetText(("%s%d against %d  ~  %s of battle  ~  %d slain"):format(
+        opening, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills))
+    card.first:SetText(("First into battle: %s%s"):format(KKC.Initiator(e) or "?",
         e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
 
@@ -221,7 +231,7 @@ local function fillCard(e)
         return l, table.concat(parts, "  ")
     end)
 
-    card.enemiesHeader:SetText(Theme.BLOOD .. ("Enemies of the Horde (%d)"):format(s.enemies) .. "|r")
+    card.enemiesHeader:SetText(Theme.BLOOD .. ("Enemies of the %s (%d)"):format(UnitFactionGroup("player") or "Horde", s.enemies) .. "|r")
     setRows(card.enemyRows, KKC.sortedValues(e.enemies, function(a, b)
         if (a.kills or 0) ~= (b.kills or 0) then return (a.kills or 0) > (b.kills or 0) end
         return a.name < b.name
@@ -269,146 +279,36 @@ function UI.SendGuild(line)
     return true
 end
 
--- Hide the buttons for one frame so the screenshot shows only the card.
+-- Hide the buttons for a few seconds so a Print Screen shows only the card. Addons may not take screenshots
+-- themselves on this client (calling Screenshot() was blocked), but the player's own key press always works.
+local CAPTURE_SECONDS = 5
+
 function UI.Screenshot()
-    if not card then return end
+    if not card or card.capturing then return end
+    card.capturing = true
     for _, b in ipairs(card.buttons) do b:Hide() end
     card.close:Hide()
     card.desc:ClearFocus()
-    C_Timer.After(0.05, function()
-        Screenshot()
-        C_Timer.After(0.6, function()
-            for _, b in ipairs(card.buttons) do b:Show() end
-            card.close:Show()
-        end)
+    card.hint:SetText(Theme.SOFT .. "Press Print Screen now|r")
+    card.hint:Show()
+    -- The hint itself would show in the picture: fade it out before the player presses the key.
+    C_Timer.After(1.2, function() card.hint:Hide() end)
+    C_Timer.After(CAPTURE_SECONDS, function()
+        for _, b in ipairs(card.buttons) do b:Show() end
+        card.close:Show()
+        card.capturing = false
     end)
 end
 
--- ------------------------------------------------------------------------------------------------
--- War chronicle: day / week summaries, "My battles" and "Word from the field" (guild feed) tabs
--- ------------------------------------------------------------------------------------------------
+KKC.On("SCREENSHOT_SUCCEEDED", function()
+    if card and card.capturing then KKC.say("the likeness is captured (Screenshots folder of the game).") end
+end)
 
-local summary
-local FIGHT_ROWS = 8
-local TABS = {
-    { key = "mine", label = "My battles", tip = "Battles you fought in. This is the chronicle you can share." },
-    { key = "guild", label = "From the field", tip = "Battles guildies with the addon fought without you." },
-}
-local PERIODS = { { key = "day", label = "Today" }, { key = "week", label = "This week" }, { key = "lastweek", label = "Last week" } }
-
-local function pressed(buttons, key)
-    for _, b in ipairs(buttons) do
-        if b.key == key then b:LockHighlight() else b:UnlockHighlight() end
-    end
-end
-
-local function buildSummary()
-    local f = panel("KorKronCompanionSummary", 660, 660, "War Chronicle")
-    f:SetPoint("CENTER", 0, 0)
-    f.tab, f.period = "mine", "week"
-
-    f.tabButtons, f.periodButtons = {}, {}
-    for i, t in ipairs(TABS) do
-        local b = Theme.Button(f, t.label, 116, t.tip, function() f.tab = t.key; UI.RefreshSummary() end)
-        b.key = t.key
-        b:SetPoint("TOPLEFT", 32 + (i - 1) * 122, -52)
-        f.tabButtons[i] = b
-    end
-    for i, p in ipairs(PERIODS) do
-        local b = Theme.Button(f, p.label, 86, "Weeks and days follow the server's reset.", function() f.period = p.key; UI.RefreshSummary() end)
-        b.key = p.key
-        b:SetPoint("TOPRIGHT", -32 - (#PERIODS - i) * 90, -52)
-        f.periodButtons[i] = b
-    end
-
-    f.heading = Theme.Text(f, 18, "CENTER", true)
-    f.heading:SetPoint("TOP", 0, -88)
-    f.span = Theme.Text(f, 11, "CENTER")
-    f.span:SetPoint("TOP", f.heading, "BOTTOM", 0, -2)
-    local divider = Theme.Divider(f, 420)
-    divider:SetPoint("TOP", f.span, "BOTTOM", 0, -2)
-
-    f.body = Theme.Text(f, 13)
-    f.body:SetPoint("TOPLEFT", 34, -150)
-    f.body:SetWidth(592)
-    f.body:SetSpacing(4)
-
-    -- The battle list follows the text, so long name lists (double names wrap) push it down instead of overlapping.
-    f.fightsHeader = Theme.Text(f, 15, "LEFT", true)
-    f.fightsHeader:SetPoint("TOPLEFT", f.body, "BOTTOMLEFT", 0, -14)
-    f.fights = {}
-    for i = 1, FIGHT_ROWS do
-        local b = CreateFrame("Button", nil, f)
-        b:SetSize(592, 18)
-        b:SetPoint("TOPLEFT", f.fightsHeader, "BOTTOMLEFT", 0, -4 - (i - 1) * 19)
-        local label = Theme.Text(b, 12)
-        label:SetPoint("LEFT", 4, 0)
-        label:SetWidth(584)
-        label:SetWordWrap(false)
-        b:SetFontString(label)
-        b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-        b:SetScript("OnClick", function(self) if self.engagement then UI.ShowCard(self.engagement) end end)
-        f.fights[i] = b
-    end
-
-    f.copy = Theme.Button(f, "Scribe chronicle", 130, "Copy this chronicle as text, to paste in Discord or keep.",
-        function() if f.data then UI.ShowCopy(f.text, f.label, "Ctrl+C, then paste it wherever the tale should be told.") end end)
-    f.copy:SetPoint("BOTTOMLEFT", 30, 16)
-    f.share = Theme.Button(f, "Sound the horn", 124, "Post a one-line summary of your battles in guild chat (and Discord, if linked).",
-        function() if f.data and f.tab == "mine" then UI.SendGuild(KKC.Summary.ShareLine(f.data, f.periodLabel)) end end)
-    f.share:SetPoint("LEFT", f.copy, "RIGHT", 8, 0)
-    local done = Theme.Button(f, "Close", 90, nil, function() f:Hide() end)
-    done:SetPoint("BOTTOMRIGHT", -30, 16)
-    return f
-end
-
-function UI.RefreshSummary()
-    local f = summary
-    if not (f and f:IsShown()) then return end
-    pressed(f.tabButtons, f.tab)
-    pressed(f.periodButtons, f.period)
-    local guild = f.tab == "guild"
-    local from, to, label = KKC.Summary.Range(f.period)
-    local data = KKC.Summary.Build(guild and KKC.db.feed or KKC.db.log, from, to)
-    f.data, f.periodLabel = data, label
-    f.text = KKC.Summary.Text(data, label, guild)
-    f.label = (guild and "Word from the Field - " or "War Chronicle - ") .. label
-    local heading, span, body = KKC.Summary.Parts(data, label, guild)
-    f.heading:SetText(Theme.BLOOD .. heading .. "|r")
-    f.span:SetText(Theme.SOFT .. span .. "|r")
-    f.body:SetText(body)
-    f.share:SetEnabled(not guild and data.engagements > 0)
-
-    -- Notable battles first in time order; minor ones only if there's room.
-    local rows = {}
-    for _, e in ipairs(data.list) do if not e.minor then rows[#rows + 1] = e end end
-    for _, e in ipairs(data.list) do if e.minor and #rows < FIGHT_ROWS then rows[#rows + 1] = e end end
-    f.fightsHeader:SetText(#rows > 0 and (Theme.BLOOD .. "Battles|r" .. Theme.SOFT .. "  (click to read the report)|r") or "")
-    for i, b in ipairs(f.fights) do
-        local e = rows[i]
-        b.engagement = e
-        if e then
-            local who = guild and (Theme.SOFT .. "  - " .. (KKC.Initiator(e) or "?") .. "|r") or ""
-            b:SetText(date("%a %H:%M", e.start) .. "  " .. KKC.Report.Headline(e)
-                .. (e.minor and (Theme.SOFT .. " (skirmish)|r") or "") .. who)
-            b:Show()
-        else
-            b:Hide()
-        end
-    end
-end
-
--- tab: "mine" | "guild", period: "day" | "week" | "lastweek"
+-- The day / week / month summaries live in the Hall of the Kor'kron now (Hub.lua).
+-- tab: "mine" | "guild", period: "day" | "week" | "lastweek" | "month" | "lastmonth" | "all"
 function UI.ShowSummary(tab, period)
-    summary = summary or buildSummary()
-    summary.tab = tab or summary.tab
-    summary.period = period or summary.period
-    summary:Show()
-    UI.RefreshSummary()
+    KKC.Hub.Show(tab == "guild" and "field" or "chronicle", period)
 end
-
-KKC.Listen("EngagementClosed", function() UI.RefreshSummary() end)
-KKC.Listen("FeedUpdated", function() UI.RefreshSummary() end)
 
 -- ------------------------------------------------------------------------------------------------
 -- Toast: a small parchment note, top center
@@ -437,7 +337,7 @@ local function buildToast()
     local icon = f:CreateTexture(nil, "ARTWORK")
     icon:SetSize(58, 58)
     icon:SetPoint("LEFT", 12, 0)
-    if not Theme.Atlas(icon, "HordeEmblem") then icon:SetTexture("Interface\\Icons\\INV_BannerPVP_01") end
+    if not Theme.Atlas(icon, Theme.F().emblem) then icon:SetTexture(Theme.F().icon) end
     f.title = Theme.Text(f, 17, "LEFT", true)
     f.title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, 2)
     f.title:SetText(Theme.BLOOD .. "Blood has been spilled|r")

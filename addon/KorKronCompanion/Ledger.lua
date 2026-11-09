@@ -1,7 +1,7 @@
 --[[
   War Ledger: your own running PvP totals per character (slain by race, by class, by name) and milestones.
   Only honor kills you got yourself count, so syncing with guildies never counts a kill twice.
-  Later this is meant to show up as a category in Forever's Legacy panel (see docs/DESIGN.md).
+  The Hall of the Kor'kron (Hub.lua) shows them as tiered challenges, Legacy style: Ledger.Tracks().
 ]]
 
 local _, KKC = ...
@@ -96,4 +96,92 @@ function Ledger.Print()
     KKC.say("  By race: " .. top(l.race, 8))
     KKC.say("  By class: " .. top(l.class, 9, KKC.className))
     KKC.say("  Most slain: " .. top(l.enemy, 5))
+end
+
+-- ------------------------------------------------------------------------------------------------
+-- Challenges for the War Ledger page: each track has tiers; a row shows the next tier to earn.
+-- ------------------------------------------------------------------------------------------------
+
+local RACES = {
+    Alliance = { "Human", "Dwarf", "Night Elf", "Gnome" },   -- the foes of a Horde player
+    Horde = { "Orc", "Undead", "Tauren", "Troll" },
+}
+local PLURAL = {
+    ["Human"] = "Humans", ["Dwarf"] = "Dwarves", ["Night Elf"] = "Night Elves", ["Gnome"] = "Gnomes",
+    ["Orc"] = "Orcs", ["Undead"] = "Undead", ["Tauren"] = "Tauren", ["Troll"] = "Trolls",
+}
+local RACE_ICONS = {
+    ["Human"] = "INV_Misc_Head_Human_01", ["Dwarf"] = "INV_Misc_Head_Dwarf_01", ["Night Elf"] = "INV_Misc_Head_Elf_02",
+    ["Gnome"] = "INV_Misc_Head_Gnome_01", ["Orc"] = "INV_Misc_Head_Orc_01", ["Undead"] = "INV_Misc_Head_Undead_01",
+    ["Tauren"] = "INV_Misc_Head_Tauren_01", ["Troll"] = "INV_Misc_Head_Troll_01",
+}
+local CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+local ICON = "Interface\\Icons\\"
+
+-- tiers: { { goal, title }, ... } -> the row for the next tier (or the last one, complete).
+local function track(icon, tiers, value, describe)
+    local done = 0
+    for i, t in ipairs(tiers) do if value >= t[1] then done = i end end
+    local current = tiers[math.min(done + 1, #tiers)]
+    return {
+        icon = ICON .. icon, title = current[2], text = describe(current[1]),
+        value = value, goal = current[1], tier = done, tiers = #tiers, complete = done == #tiers,
+    }
+end
+
+-- Counts from your own battles in the log (all characters' logs share the file; only this character's count).
+local function fromLog()
+    local me, c = KKC.me(), { struck = 0, weathered = 0, battles = 0 }
+    for _, e in ipairs(KKC.db.log) do
+        if e.owner == me and not e.test and not e.minor then
+            c.battles = c.battles + 1
+            local ambushed = KKC.Ambushed(e)
+            if ambushed == false then c.struck = c.struck + 1 end
+            if ambushed and KKC.Stats(e).kills > 0 then c.weathered = c.weathered + 1 end
+        end
+    end
+    return c
+end
+
+function Ledger.Tracks()
+    local l, c = Ledger.Mine(), fromLog()
+    local own = UnitFactionGroup("player") or "Horde"
+    local foe = KKC.enemyFaction()
+    local list = {}
+    local function add(row) list[#list + 1] = row end
+
+    add(track("Ability_Warrior_BattleShout", {
+        { 10, "Blooded" }, { 50, "Veteran of the Front" }, { 100, "Champion of the " .. own },
+        { 250, "Scourge of the " .. foe }, { 500, "Warbringer" }, { 1000, "Legend of the " .. own },
+    }, l.total, function(g) return ("Slay %d enemy players."):format(g) end))
+    add(track("INV_Misc_Spyglass_03", {
+        { 10, "Many Faces" }, { 25, "Known to the Enemy" }, { 50, "A Name They Whisper" }, { 100, "A Name They Fear" },
+    }, KKC.count(l.enemy), function(g) return ("Slay %d different enemy players."):format(g) end))
+    add(track(own == "Horde" and "INV_BannerPVP_01" or "INV_BannerPVP_02", {
+        { 5, "Called to Arms" }, { 25, "Seasoned Warrior" }, { 100, "Hardened by War" }, { 250, "Born for Battle" },
+    }, c.battles, function(g) return ("Fight %d battles of note."):format(g) end))
+    add(track("Ability_Rogue_Ambush", {
+        { 5, "The First Blow" }, { 25, "Strike from the Shadows" }, { 100, "Master of the Hunt" },
+    }, c.struck, function(g) return ("Strike first in %d battles."):format(g) end))
+    add(track("Ability_Warrior_DefensiveStance", {
+        { 3, "Unbroken" }, { 10, "Turned the Tide" }, { 25, "Iron Will" },
+    }, c.weathered, function(g) return ("Be ambushed and still slay the enemy, %d times."):format(g) end))
+
+    local races, listed = {}, {}
+    for _, r in ipairs(RACES[foe] or {}) do races[#races + 1] = r; listed[r] = true end
+    for r in pairs(l.race) do if not listed[r] then races[#races + 1] = r end end -- races this list doesn't know yet
+    for _, r in ipairs(races) do
+        local plural = PLURAL[r] or r
+        add(track(RACE_ICONS[r] or "INV_Misc_QuestionMark", {
+            { 10, "First Blood: " .. plural }, { 50, "Hunter of " .. plural }, { 100, RACE_TITLES[r] or ("Bane of the " .. plural) },
+            { 250, "Scourge of the " .. plural },
+        }, l.race[r] or 0, function(g) return ("Slay %d %s."):format(g, plural) end))
+    end
+    for _, cl in ipairs(CLASSES) do
+        local name = KKC.className(cl) or cl
+        add(track("ClassIcon_" .. cl:sub(1, 1) .. cl:sub(2):lower(), {
+            { 10, name .. "-slayer" }, { 50, "Bane of " .. name .. "s" }, { 100, CLASS_TITLES[cl] or (name .. "breaker") },
+        }, l.class[cl] or 0, function(g) return ("Slay %d %ss."):format(g, name) end))
+    end
+    return list
 end

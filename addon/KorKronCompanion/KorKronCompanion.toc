@@ -14,4 +14,5 @@ Summary.lua
 Tracker.lua
 Sync.lua
 UI.lua
+Hub.lua
 Commands.lua

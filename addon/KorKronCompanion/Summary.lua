@@ -27,9 +27,36 @@ local function dayStart()
     return now - DAY
 end
 
--- period: "day" | "week" | "lastweek" -> from, to, label
+-- Start of a calendar month (local time), `offset` months from the current one.
+local function monthStart(offset)
+    local t = date("*t", KKC.now())
+    local m = t.month + (offset or 0)
+    local y = t.year + math.floor((m - 1) / 12)
+    m = (m - 1) % 12 + 1
+    return time({ year = y, month = m, day = 1, hour = 0, min = 0, sec = 0 })
+end
+
+Summary.PERIODS = {
+    { key = "day", label = "Today" },
+    { key = "week", label = "This week" },
+    { key = "lastweek", label = "Last week" },
+    { key = "month", label = "This month" },
+    { key = "lastmonth", label = "Last month" },
+    { key = "all", label = "All time" },
+}
+
+-- period: "day" | "week" | "lastweek" | "month" | "lastmonth" | "all" -> from, to, label
+-- Weeks and days follow the server's reset; months are calendar months.
 function Summary.Range(period)
-    if period == "day" then
+    if period == "month" then
+        local s = monthStart(0)
+        return s, monthStart(1), date("%B", s)
+    elseif period == "lastmonth" then
+        local s = monthStart(-1)
+        return s, monthStart(0), date("%B", s)
+    elseif period == "all" then
+        return 0, KKC.now() + 1, "All time"
+    elseif period == "day" then
         local s = dayStart()
         return s, s + DAY, "Today"
     elseif period == "lastweek" then
@@ -132,6 +159,7 @@ end
 
 -- Periods run reset to reset (a week ends early on reset day), so the last full day is the one before `to`.
 local function span(s)
+    if s.from == 0 then return "since the first battle" end
     local text = date("%a %d %b", s.from)
     if s.to - s.from > DAY then text = text .. " to " .. date("%a %d %b", s.to - DAY) end
     return text
@@ -139,11 +167,13 @@ end
 
 local function heading(label, guild) return (guild and "Word from the Field" or "War Chronicle of the Kor'kron") .. " - " .. label end
 
--- For the window: heading, date span and the body with ink-colored labels.
-function Summary.Parts(s, label, guild)
+-- For a window: heading, date span and the body with colored labels. dark = the hall's colors, else parchment ink.
+function Summary.Parts(s, label, guild, dark)
     local T, out = KKC.Theme, {}
+    local head, text, soft = T.BLOOD, T.INK, T.SOFT
+    if dark then head, text, soft = T.GOLD, T.LIGHT, T.DIM end
     for _, l in ipairs(chronicle(s, guild)) do
-        out[#out + 1] = l[1] and (T.BLOOD .. l[1] .. ":|r " .. T.INK .. l[2] .. "|r") or (T.SOFT .. l[2] .. "|r")
+        out[#out + 1] = l[1] and (head .. l[1] .. ":|r " .. text .. l[2] .. "|r") or (soft .. l[2] .. "|r")
     end
     return heading(label, guild), span(s), table.concat(out, "\n")
 end

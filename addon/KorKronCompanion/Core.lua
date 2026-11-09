@@ -150,7 +150,8 @@ end
 
 KKC.defaults = {
     settings = {
-        notify = "toast",       -- off | quiet | toast | prompt
+        sync = false,           -- share engagements with guildies over GUILD addon messages (/kkc sync on)
+        notify = "quiet",       -- off | quiet (one chat line) | toast | prompt; tracking runs either way
         promptAll = false,      -- true: notify everyone, not just the initiator
         mergeGap = 60,          -- seconds out of combat before an engagement closes
         notableSeconds = 20,    -- this much PvP combat makes an engagement notable
@@ -163,7 +164,7 @@ KKC.defaults = {
 
 -- Stored data format version. Bump it and add a step in migrate() when stored fields change meaning, so long-term
 -- statistics (a 3-month or season summary) can always read old records.
-KKC.SCHEMA = 1
+KKC.SCHEMA = 2
 
 -- How long engagements are kept: your own fights a year (long-term statistics), the guild feed four months.
 local KEEP = { log = { days = 365, max = 3000 }, feed = { days = 120, max = 1500 } }
@@ -179,7 +180,12 @@ end
 local TRANSIENT = { "notified" }
 
 local function migrate(db)
-    db.schema = db.schema or KKC.SCHEMA
+    db.schema = db.schema or 1
+    -- 2: no popups by default. A "toast" saved by 0.1 was the old default, not a choice: make it one chat line.
+    if db.schema < 2 then
+        if db.settings.notify == "toast" then db.settings.notify = "quiet" end
+        db.schema = 2
+    end
     for _, list in ipairs({ db.log, db.feed }) do
         for _, e in ipairs(list) do
             for _, k in ipairs(TRANSIENT) do e[k] = nil end
@@ -235,6 +241,15 @@ function KKC.Fire(name, ...)
         if not ok and KKC.debugErrors then KKC.say(KKC.RED .. name .. ":|r " .. tostring(err)) end
     end
 end
+
+-- When the game blocks something this addon tried, say which function it was (the popup doesn't).
+local function onBlocked(culprit, func)
+    if culprit == ADDON then
+        KKC.say(KKC.RED .. "the game blocked|r " .. tostring(func) .. KKC.RED .. ". Please send this line to the addon author.|r")
+    end
+end
+KKC.On("ADDON_ACTION_BLOCKED", onBlocked)
+KKC.On("ADDON_ACTION_FORBIDDEN", onBlocked)
 
 KKC.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end

@@ -179,6 +179,7 @@ end
 
 -- Only notable engagements are worth a guild message; minor ones stay in your own log.
 function S.Broadcast(e)
+    if not KKC.settings().sync then return end -- off until guild sync has been tested (/kkc sync on)
     if e.test or e.minor or not IsInGuild() then return end
     local msgs = S.Messages(e)
     C_Timer.After(1 + math.random() * OUT.JITTER, function() enqueue(msgs) end)
@@ -387,6 +388,7 @@ end
 KKC.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= PREFIX or channel ~= "GUILD" then return end
     heard[#heard + 1] = GetTime() -- the guild's load counts everyone, our own echo too
+    if not (KKC.db and KKC.settings().sync) then return end
     if inInstance() then return end
     if not (KKC.readable(text) and KKC.readable(sender)) then return end
     KKC.raw.sender = sender

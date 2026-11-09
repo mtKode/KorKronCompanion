@@ -59,6 +59,20 @@ Run `/kkc debug` first and keep its output.
 - [ ] After a fight, `/dump KorKronCompanionDB.log[1].map, KorKronCompanionDB.log[1].x` shows numbers. Nil means
       the client hides the position and heatmaps won't be possible.
 
+## 4a. The Hall of the Kor'kron
+- [ ] `/kkc` opens the hall: dark parchment texture, war-table border in your faction's style, banner title, crest,
+      guild name and your name at the top. The section buttons on the left switch pages.
+- [ ] Chronicle: the six period buttons fit on one row; the tiles, details and battles don't overlap. "This month"
+      says the month's name.
+- [ ] Battles: rows open the battle card; Newer / Older page through.
+- [ ] War Ledger: icons show (no green boxes; untouched tracks are grey), bars fill, "Tier 1 of 4".
+- [ ] Settings: each Change button cycles and the text follows. Notifications show "Quiet" (one chat line, no popup).
+- [ ] Legacy window: our tab (faction banner icon) sits under the three Blizzard tabs. Clicking it shows the hall
+      inside the window without its own border; check whether the Legacy portrait in the top-left corner and the
+      close button are covered. Clicking a Blizzard tab or closing the window takes the hall away again.
+      Nothing in the Legacy window behaves differently afterwards, and no "blocked" popup appears.
+- [ ] After a real battle: one line in chat, no popup; the battle is in the hall.
+
 ## 4b. War reports
 - [ ] `/kkc debug` "this week" line: starts at the last weekly reset (Wednesday morning on EU).
 - [ ] `/kkc week` after a few fights: text fits in the window (long name lists may wrap into the fight list) and

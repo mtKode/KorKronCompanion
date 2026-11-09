@@ -68,12 +68,14 @@ out of combat (+1 s):  damage meter "Current" read ─┘
 
 ## Notifications (not invasive)
 
-Setting `notify`: `off` | `quiet` (one chat line) | `toast` (default) | `prompt`.
+Tracking always runs in the background; this only decides whether you're told. Reporting is done from the hall
+(`/kkc`), when you choose.
+
+Setting `notify`: `off` | `quiet` (one chat line, the default) | `toast` (a note on screen) | `prompt` (open the card).
+- No popups by default. The 0.1 default `toast` is turned into `quiet` once (schema 2).
 - Never anything during combat.
-- The toast shows after the engagement closes, only for notable engagements, only for the initiator (`promptAll` to
-  get it as everyone). It disappears by itself after 25 s.
-- Everyone else's addon sends its data silently. They can open the card from `/kkc log`.
-- Minor engagements are kept in the log and never notify.
+- Only notable engagements, and only for the guildie first into battle (`promptAll` for everyone).
+- Minor engagements are kept in the log and never announced.
 
 ## Outputs
 
@@ -96,20 +98,34 @@ Slain: 5 | Fallen: Grukk
 **Share to guild** (≤255 chars, one line, goes to Discord through the bridge if linked):
 `[Kor'kron] Tarren Mill held - 4 against 6 Alliance, 5 slain, Grukk fell in glory.`
 
-## War reports (day / week)
+## The Hall of the Kor'kron (Hub.lua)
 
-Window `/kkc week` with two tabs:
-- **My fights**: built from your own log. This is the report you copy or share. "Fought beside" counts the guildies
-  who were in your engagements.
-- **Guild feed**: guildies' fights you weren't part of, from synced reports. Several guildies reporting the same
-  fight merge into one entry, using the same zone and time rules as your own fights. Read-only: it can be copied but
-  not shared, because not everyone runs the addon and the report should be about fights you were part of. A report
-  that lands in the feed while you're still fighting moves to your own engagement once that exists (within 10 min).
+The main window (`/kkc`). Overlord style: dark parchment-textured panel in the faction's colors, war-table border,
+faction banner and emblem, inset boxes, icon buttons. Sections on the left:
 
-Periods are Today, This week and Last week. They follow the server's daily and weekly reset
-(`C_DateAndTime.GetWeeklyResetStartTime`, so Wednesday on EU). A summary shows engagements (notable), slain, fallen,
-fighting time, hot spots, fought beside / Kor'kron in the field, most slain, slain by race and by class, the biggest
-fight, and top damage and healing. Fights in the period are listed underneath; click one for its battle card.
+| Section | Contents |
+|---|---|
+| **Chronicle** | Your battles over Today / This week / Last week / This month / Last month / All time: four tiles (battles, foes slain, Kor'kron fallen, first blow ours/theirs), the details (contested ground, fought beside, most slain, by race and class, greatest battle, deadliest blades, most mending), the battles themselves. Scribe chronicle (copy) and Sound the horn (one line to guild chat). |
+| **Battles** | Every battle you fought, newest first, 19 a page; skirmishes on request. Click one for its battle card. |
+| **From the field** | The same chronicle over the guild feed (guildies' battles you weren't in). Copy only, never shared. Says so when guild sync is off. |
+| **War Ledger** | Tiered challenges, Legacy style: total slain, unique foes, battles fought, first blows, ambushes weathered, each enemy race, each class. A row shows the next tier with a progress bar. |
+| **Settings** | Announcing battles, who is told, guild sync, a test battle, diagnostics. |
+
+Weeks and days follow the server's reset (`C_DateAndTime.GetWeeklyResetStartTime`, Wednesday on EU); months are
+calendar months (local time).
+
+**In the Legacy window:** our own side tab under Blizzard's three (the `common-sidetab` art, faction banner icon).
+Clicking it lays the same hall over the Legacy content, without its own border, banner and crest. Blizzard's tabs and
+closing the window take it away again. Blizzard's frames are only hooked (`HookScript`), never changed, so this can't
+taint them. The Legacy window loads on demand, so the tab is attached on `ADDON_LOADED` of `Blizzard_LegacySystem`.
+
+**Factions:** the Horde gets red and iron (Horde war table, Horde emblem and banner, "Lok'tar ogar!"); the Alliance
+gets blue and gold (Alliance war table, emblem and banner, "For the Alliance!"). The battle card and toast follow
+the same theme.
+
+The feed: several guildies reporting the same fight merge into one entry (same zone and time rules as your own
+fights). A report that lands in the feed while you're still fighting moves to your own battle once that exists
+(within 10 min).
 
 Retention: see Storage below. Your own fights are kept for a year, so longer summaries (3 months, a season) can be
 built later.
@@ -204,12 +220,12 @@ Gaps a long-term report can't fill: fights where nobody had the addon, killing b
 known only by name when nobody targeted them.
 
 ## Commands
-`/kkc` (log in chat) · `/kkc card [n]` · `/kkc week|day|lastweek` · `/kkc guild [n]` · `/kkc notify off|quiet|toast|prompt` · `/kkc ledger` · `/kkc test` (fake
-engagement to preview the UI) · `/kkc debug` (API and restriction report for launch night) · `/kkc reset`.
+See the README. `/kkc` opens the hall; `/kkc debug` gives the API and restriction report.
 
 ## Later
-1. **Legacy panel**: Forever's Legacy system (`Blizzard_LegacySystem`) is a ScrollBox data provider on top of
-   achievements. Injecting a "Kor'kron War Ledger" category looks possible. Investigate after launch.
-2. Patrol mode (one recap per outing), call to arms button, nemesis / kill-on-sight list.
+1. **Killing blows**: `PARTY_KILL` (attacker and target GUID for kills by your group), as Overlord Forever uses it.
+2. **A real Legacy category**: Blizzard's Legacy list is built from achievement categories and every row expects a real
+   achievement; inserting ours into it would risk tainting. The side tab avoids that. Revisit only if it's wanted.
+3. Patrol mode (one recap per outing), call to arms button, nemesis / kill-on-sight list.
 3. Killer from death recap (`C_DeathRecap`) for "who killed me".
 4. Optional companion Discord bot that reads shared lines from the bridge channel.
