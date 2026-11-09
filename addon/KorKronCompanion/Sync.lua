@@ -1,75 +1,191 @@
 --[[
   Sharing engagements between guildies with the addon (hidden addon messages on the GUILD channel).
 
-  When an engagement closes, each client sends what it saw:
-    H;eid;start;stop;zone;subzone;pvpSeconds;class;nEnemies;opened;map;x;y   header (eid = owner-start;
-                                                                 opened 1/0/empty = struck first / hit first / unknown)
-    E;eid;name;class;race;kills                                  one per enemy (max 40)
-    P;eid;name;class;dmg;heal;died                               one per guildie (max 40)
+  When a notable engagement closes, each client sends what it saw, packed into at most four messages:
+    H;eid;start;stop;zone;subzone;pvpSeconds;class;opened;map;x;y   header (eid = owner-start;
+                                                       opened 1/0/empty = struck first / hit first / unknown)
+    E;eid;name,CLASS,race,kills/name,CLASS,race,kills/...           enemies, most kills first (up to two messages)
+    P;eid;name,CLASS,dmg,heal,died/...                              guildies (one message)
   Receivers merge a report into their own engagement when the zone matches and the times overlap; reports about
   fights they weren't in go to the guild feed (KKC.db.feed).
   Kills per enemy merge as the maximum (everyone in a group gets the same honor kill); a guildie's own damage and
   healing win over what someone else's meter said. Unknown kinds are ignored, so later versions can add more.
+
+  Since Forever's launch the servers are strict about addon messages (what Overlord Forever, which syncs over the
+  same channels, found the hard way):
+    - custom channels are refused, so only GUILD is used;
+    - many guild messages from one player can get all of that player's later addon messages dropped, while
+      SendAddonMessage still answers success;
+    - SendAddonMessage answers an Enum.SendAddonMessageResult; a throttled message was NOT sent.
+  So guild messages here are kept rare: minor engagements are never sent, one client spends at most one message per
+  TOKEN_SEC (BURST at once), nothing goes out while the guild is busy with our prefix, a refused message is retried
+  later instead of lost, and nothing is sent or read inside an instance or in combat.
 ]]
 
 local _, KKC = ...
 local S = {}
 KKC.Sync = S
 
-local PREFIX = "KKC1"
+local PREFIX = "KKC2" -- KKC1 (v0.1, one message per enemy) is not understood any more
 local SEP = ";"
-local MAX_LIST = 40
+local LIMIT = 250 -- bytes per message (the server allows 255)
+
+local OUT = {
+    TOKEN_SEC = 15,      -- one message per 15 s per client on average...
+    BURST = 4,           -- ...but one engagement (up to 4 messages) can go out at once
+    GUILD_PER_MIN = 12,  -- hold back while the guild already carries this many of our messages a minute
+    TTL = 300,           -- a message still waiting after 5 minutes is given up
+    OUTBOX_MAX = 16,
+    JITTER = 6,          -- guildies in the same fight close it at the same moment: spread their reports
+}
+local INTAKE_PER_MIN = 8 -- more than this from one sender in a minute is not ours to read
+
+-- Results that mean "not sent, try again later": throttles, lockdown, a general error.
+local RETRY_CODES = { [3] = true, [8] = true, [9] = true, [11] = true }
+local NOT_IN_GUILD = 10
+
+S.stats = { ok = 0, refused = 0, dropped = 0 }
 
 -- ------------------------------------------------------------------------------------------------
--- Sending: a small queue, one message every 0.3 s, never in combat or chat lockdown
+-- Sending
 -- ------------------------------------------------------------------------------------------------
 
-local queue, pumping = {}, false
+local outbox = {}       -- { msg, at }
+local heard = {}        -- GetTime() of every message with our prefix heard on GUILD (our own echo included)
+local tokens, tokenAt = OUT.BURST, nil
+local pumpTimer
 
-local function canSend()
-    if not IsInGuild() then return false end
-    if InCombatLockdown() then return false end
-    if C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown) then return false end
-    return true
+local function inInstance() return (IsInInstance()) == true end
+
+local function guildLoad()
+    local now = GetTime()
+    while heard[1] and now - heard[1] > 60 do table.remove(heard, 1) end
+    return #heard
 end
 
-local function pump()
-    if #queue == 0 then pumping = false; return end
-    if not canSend() then return C_Timer.After(2, pump) end
-    KKC.try(C_ChatInfo.SendAddonMessage, PREFIX, table.remove(queue, 1), "GUILD")
-    C_Timer.After(0.3, pump)
+local function refill()
+    local now = GetTime()
+    if tokenAt then tokens = math.min(OUT.BURST, tokens + (now - tokenAt) / OUT.TOKEN_SEC) end
+    tokenAt = now
 end
 
-local function send(...)
+local function blocked()
+    if not IsInGuild() then return true end
+    if InCombatLockdown() or inInstance() then return true end
+    return C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown) or false
+end
+
+local pump
+local function schedule(delay)
+    if pumpTimer then pumpTimer:Cancel() end
+    pumpTimer = C_Timer.NewTimer(math.max(0.3, delay), pump)
+end
+
+pump = function()
+    pumpTimer = nil
+    local now = GetTime()
+    while outbox[1] and now - outbox[1].at > OUT.TTL do
+        table.remove(outbox, 1)
+        S.stats.dropped = S.stats.dropped + 1
+    end
+    if #outbox == 0 then return end
+    if blocked() then return schedule(5) end
+    refill()
+    if tokens < 1 then return schedule((1 - tokens) * OUT.TOKEN_SEC) end
+    if guildLoad() >= OUT.GUILD_PER_MIN then return schedule(10) end
+
+    local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, outbox[1].msg, "GUILD")
+    -- Success is 0 on this client (true or nothing on older ones).
+    local sent = ok and (result == nil or result == true or result == 0)
+    if sent then
+        table.remove(outbox, 1)
+        tokens = tokens - 1
+        S.stats.ok = S.stats.ok + 1
+        return schedule(0.5)
+    end
+    S.stats.refused = S.stats.refused + 1
+    S.stats.lastCode = ok and result or "error"
+    if ok and result == NOT_IN_GUILD then
+        wipe(outbox)
+    elseif ok and RETRY_CODES[result] then
+        tokens = 0 -- the server says slow down: wait a full token
+        schedule(OUT.TOKEN_SEC)
+    else
+        table.remove(outbox, 1) -- a bad message stays bad
+        schedule(0.5)
+    end
+end
+
+local function enqueue(msgs)
+    local now = GetTime()
+    for _, msg in ipairs(msgs) do outbox[#outbox + 1] = { msg = msg, at = now } end
+    while #outbox > OUT.OUTBOX_MAX do
+        table.remove(outbox, 1)
+        S.stats.dropped = S.stats.dropped + 1
+    end
+    if not pumpTimer then schedule(0.3) end
+end
+
+function S.Pending() return #outbox end
+
+local function field(v) return (tostring(v == nil and "" or v):gsub("[\r\n;|,/]", " ")) end
+
+local function line(...)
     local parts = {}
-    for i = 1, select("#", ...) do parts[i] = KKC.clean((select(i, ...))) end
-    local msg = table.concat(parts, SEP)
-    if #msg > 250 then msg = msg:sub(1, 250) end
-    queue[#queue + 1] = msg
-    if not pumping then
-        pumping = true
-        C_Timer.After(0.3, pump)
-    end
+    for i = 1, select("#", ...) do parts[i] = field((select(i, ...))) end
+    return table.concat(parts, SEP):sub(1, LIMIT)
 end
 
-function S.Broadcast(e)
-    if e.test or not IsInGuild() then return end
-    local enemies = KKC.sortedValues(e.enemies)
-    local n = math.min(#enemies, MAX_LIST)
+-- "E;eid;" followed by as many "a,b,c/d,e,f" entries as fit, over at most maxMsgs messages.
+local function packed(kind, eid, entries, maxMsgs)
+    local msgs, cur = {}, nil
+    local head = kind .. SEP .. field(eid) .. SEP
+    for _, values in ipairs(entries) do
+        local item = {}
+        for i = 1, values.n do item[i] = field(values[i]) end
+        local text = table.concat(item, ",")
+        if cur and #cur + 1 + #text <= LIMIT then
+            cur = cur .. "/" .. text
+        else
+            if cur then msgs[#msgs + 1] = cur end
+            cur = nil
+            if #msgs >= maxMsgs then break end
+            cur = (head .. text):sub(1, LIMIT)
+        end
+    end
+    if cur then msgs[#msgs + 1] = cur end
+    return msgs
+end
+
+local function values(...) return { n = select("#", ...), ... } end
+
+function S.Messages(e)
     local opened = e.opened == true and 1 or (e.opened == false and 0 or "")
-    send("H", e.id, e.start, e.stop, e.zone, e.subzone, e.pvpSeconds or 0, KKC.myClass() or "", n,
-        opened, e.map or "", e.x or "", e.y or "")
-    for i = 1, n do
-        local en = enemies[i]
-        send("E", e.id, en.name, en.class or "", en.race or "", en.kills or 0)
+    local msgs = { line("H", e.id, e.start, e.stop, e.zone, e.subzone, e.pvpSeconds or 0, KKC.myClass() or "",
+        opened, e.map or "", e.x or "", e.y or "") }
+    local enemies = {}
+    for _, en in ipairs(KKC.sortedValues(e.enemies, function(a, b)
+        if (a.kills or 0) ~= (b.kills or 0) then return (a.kills or 0) > (b.kills or 0) end
+        return a.name < b.name
+    end)) do enemies[#enemies + 1] = values(en.name, en.class or "", en.race or "", en.kills or 0) end
+    local members = {}
+    for _, m in ipairs(KKC.sortedValues(e.members)) do
+        members[#members + 1] = values(m.name, m.class or "", math.floor(m.dmg or 0), math.floor(m.heal or 0), m.died and 1 or 0)
     end
-    for i, m in ipairs(KKC.sortedValues(e.members)) do
-        if i > MAX_LIST then break end
-        send("P", e.id, m.name, m.class or "", math.floor(m.dmg or 0), math.floor(m.heal or 0), m.died and 1 or 0)
-    end
+    for _, msg in ipairs(packed("E", e.id, enemies, 2)) do msgs[#msgs + 1] = msg end
+    for _, msg in ipairs(packed("P", e.id, members, 1)) do msgs[#msgs + 1] = msg end
+    return msgs
+end
+
+-- Only notable engagements are worth a guild message; minor ones stay in your own log.
+function S.Broadcast(e)
+    if e.test or e.minor or not IsInGuild() then return end
+    local msgs = S.Messages(e)
+    C_Timer.After(1 + math.random() * OUT.JITTER, function() enqueue(msgs) end)
 end
 
 KKC.Listen("EngagementClosed", S.Broadcast)
+
 
 -- ------------------------------------------------------------------------------------------------
 -- Receiving. A report merges into our own engagement when it fits one (same zone, overlapping time). Otherwise it goes
@@ -199,13 +315,13 @@ local handlers = {}
 function handlers.H(who, f)
     local start, stop = tonumber(f[3]), tonumber(f[4])
     if not (start and stop) then return end
-    local opened -- nil: unknown (older version)
-    if f[10] == "1" then opened = true elseif f[10] == "0" then opened = false end
+    local opened -- nil: unknown
+    if f[9] == "1" then opened = true elseif f[9] == "0" then opened = false end
     local r = {
         who = who, start = start, stop = stop, zone = f[5], subzone = f[6] or "", pvpSeconds = tonumber(f[7]) or 0,
         class = nonEmpty(f[8]), at = KKC.now(), enemies = {}, members = {},
         opened = opened,
-        map = tonumber(f[11]), x = tonumber(f[12]), y = tonumber(f[13]),
+        map = tonumber(f[10]), x = tonumber(f[11]), y = tonumber(f[12]),
     }
     reports[f[2]] = r
     local e = KKC.Tracker.Match(start, stop, r.zone)
@@ -217,22 +333,39 @@ function handlers.H(who, f)
     end
 end
 
+-- "a,b,c/d,e,f" -> { {a,b,c}, {d,e,f} }
+local function entries(text)
+    local list = {}
+    for item in ((text or "") .. "/"):gmatch("(.-)/") do
+        local v = {}
+        for part in (item .. ","):gmatch("(.-),") do v[#v + 1] = part end
+        if nonEmpty(v[1]) then list[#list + 1] = v end
+    end
+    return list
+end
+
 function handlers.E(who, f)
-    local r, name = reports[f[2]], nonEmpty(f[3])
-    if not (r and name and r.who == who) then return end
-    local en = { name = name, class = nonEmpty(f[4]), race = nonEmpty(f[5]), kills = tonumber(f[6]) or 0 }
-    r.enemies[name] = en
+    local r = reports[f[2]]
+    if not (r and r.who == who) then return end
     local e = destination(r)
-    if e then mergeEnemy(e, en); changed(e) end
+    for _, v in ipairs(entries(f[3])) do
+        local en = { name = v[1], class = nonEmpty(v[2]), race = nonEmpty(v[3]), kills = tonumber(v[4]) or 0 }
+        r.enemies[en.name] = en
+        if e then mergeEnemy(e, en) end
+    end
+    if e then changed(e) end
 end
 
 function handlers.P(who, f)
-    local r, name = reports[f[2]], nonEmpty(f[3])
-    if not (r and name and r.who == who) then return end
-    local p = { name = name, class = nonEmpty(f[4]), dmg = tonumber(f[5]) or 0, heal = tonumber(f[6]) or 0, died = f[7] == "1" }
-    r.members[name] = p
+    local r = reports[f[2]]
+    if not (r and r.who == who) then return end
     local e = destination(r)
-    if e then mergeMember(e, who, p); changed(e) end
+    for _, v in ipairs(entries(f[3])) do
+        local p = { name = v[1], class = nonEmpty(v[2]), dmg = tonumber(v[3]) or 0, heal = tonumber(v[4]) or 0, died = v[5] == "1" }
+        r.members[p.name] = p
+        if e then mergeMember(e, who, p) end
+    end
+    if e then changed(e) end
 end
 
 local function split(text)
@@ -241,12 +374,24 @@ local function split(text)
     return f
 end
 
+local intake = {} -- sender -> { GetTime() of their recent messages }
+
+local function tooChatty(who)
+    local now, list = GetTime(), intake[who] or {}
+    intake[who] = list
+    while list[1] and now - list[1] > 60 do table.remove(list, 1) end
+    list[#list + 1] = now
+    return #list > INTAKE_PER_MIN
+end
+
 KKC.On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= PREFIX or channel ~= "GUILD" then return end
+    heard[#heard + 1] = GetTime() -- the guild's load counts everyone, our own echo too
+    if inInstance() then return end
     if not (KKC.readable(text) and KKC.readable(sender)) then return end
     KKC.raw.sender = sender
     local who = KKC.short(sender)
-    if not who or who == KKC.me() then return end
+    if not who or who == KKC.me() or tooChatty(who) then return end
     local f = split(text)
     local handler = handlers[f[1]]
     if handler and f[2] then handler(who, f) end

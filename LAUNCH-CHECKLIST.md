@@ -46,6 +46,10 @@ Run `/kkc debug` first and keep its output.
 - [ ] Enemies you only damaged (no kill) show up. That's the meter's EnemyDamageTaken list; confirm it lists enemies,
       not your own group.
 - [ ] Your guildie appears on your card (sync) and the same initiator shows on both clients.
+- [ ] After a fight, `/kkc debug` → `guild sync: N sent, 0 refused …`. The report reaches the other client within
+      about 10 s. If messages show as refused (code 3 or 8), or are sent but never arrive, note it: the server may be
+      dropping our guild messages (see "Sync protocol" in docs/DESIGN.md).
+- [ ] Overlord still syncs normally with Kor'kron Companion running alongside it (its network dot stays green).
 - [ ] Only the initiator gets the toast. Nobody gets one for a stray hit (`/kkc log all` shows it as minor).
 - [ ] Nothing pops up in combat.
 

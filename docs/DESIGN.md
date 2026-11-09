@@ -135,16 +135,37 @@ Guild addons to keep in mind: Total RP 3 (+ Extended) and Overlord Forever (worl
 territory). Overlord could later tag battles with the front or objective they were fought over; its API still needs
 checking.
 
-## Sync protocol (prefix `KKC1`, channel GUILD)
+## Sync protocol (prefix `KKC2`, channel GUILD)
 
-Lines are `;`-separated (shown with `|` below), ≤ 250 bytes, queued 0.3 s apart. New fields go on the end, so older
-versions just ignore them.
-- `H|eid|start|stop|zone|subzone|pvpSeconds|class|nEnemies|opened|map|x|y` engagement header (eid = `sender-start`,
+Since Forever's launch (2026-11-04) the servers are strict about addon messages. Overlord Forever, which syncs over
+the same channels, documents this in its `SyncGuild.lua`:
+- custom channels are refused (so we use GUILD only);
+- a player who sends many guild addon messages may have every later one dropped, while `SendAddonMessage` still
+  answers success;
+- `SendAddonMessage` returns `Enum.SendAddonMessageResult`: 0 success, 3 `AddonMessageThrottle`,
+  8 `ChannelThrottle`, 11 `AddOnMessageLockdown`, 10 `NotInGuild`, and so on. A throttled message was not sent.
+- `CHAT_MSG_ADDON` is suspended inside instances.
+
+So guild messages are kept rare:
+- **Only notable engagements** are sent. Minor ones stay in your own log.
+- **At most 4 messages per engagement**, packed: 1 header, up to 2 enemy messages (most kills first) and 1 guildie
+  message. Whatever doesn't fit in 250 bytes is left out.
+- **Per client: a token bucket**, burst 4, then one message per 15 s. A random 1–7 s delay spreads the reports of
+  guildies who leave the same fight together.
+- **Guild-wide: hold back** while 12 or more `KKC2` messages were heard in the last minute (our own echo included).
+- **The result is checked.** Throttle, lockdown or error means retry after a full token; NotInGuild clears the queue.
+  A message still waiting after 5 minutes is given up. `/kkc debug` shows sent / refused / given up / waiting.
+- **Nothing is sent** in combat, in an instance, or during chat lockdown. Nothing is read in an instance.
+- **Receivers read at most 8 messages a minute** from one sender.
+
+Lines are `;`-separated (shown with `|` below). List entries are `,`-separated and joined with `/`.
+- `H|eid|start|stop|zone|subzone|pvpSeconds|class|opened|map|x|y` engagement header (eid = `sender-start`,
   opened `1`/`0`/empty)
-- `E|eid|name|classToken|raceToken|kills` one per enemy (capped at 40)
-- `P|eid|name|classToken|dmg|heal|died` one per guildie in your meter (capped at 40)
+- `E|eid|name,CLASS,race,kills/...` enemies
+- `P|eid|name,CLASS,dmg,heal,died/...` guildies
 
-Messages from senders who aren't in the guild are ignored. Unknown kinds are ignored, so later versions can add more.
+`KKC1` (v0.1, one message per enemy and per guildie) is no longer read. Unknown kinds are ignored, so later
+versions can add more.
 
 ## Storage (SavedVariables `KorKronCompanionDB`)
 The file is `WTF\Account\<account>\SavedVariables\KorKronCompanion.lua`, a plain Lua table written at logout or

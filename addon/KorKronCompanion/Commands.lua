@@ -54,6 +54,9 @@ local function debug()
 
     KKC.say(("  honor kill patterns: %d (should be 4)"):format(KKC.Tracker.HonorPatternCount()))
     KKC.say("  in guild: " .. yesNo(IsInGuild()) .. ", addon prefix registered: " .. tostring(KKC.Sync.prefixRegistered))
+    local st = KKC.Sync.stats
+    KKC.say(("  guild sync: %d sent, %d refused%s, %d given up, %d waiting"):format(st.ok, st.refused,
+        st.lastCode and (" (last code " .. tostring(st.lastCode) .. ")") or "", st.dropped, KKC.Sync.Pending()))
     KKC.say("  chat lockdown: " .. yesNo(C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown)))
 
     local D = C_Discord
