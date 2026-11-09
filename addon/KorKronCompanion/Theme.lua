@@ -56,11 +56,11 @@ local FACTIONS = {
     },
 }
 
--- Colors on parchment.
-Theme.INK = "|cff3a210e"
-Theme.SOFT = "|cff58401f"
-Theme.MEND = "|cff1d5a1d"
-Theme.INK_RGB = { 0.23, 0.13, 0.06 }
+-- Colors on parchment: near-black browns (the first, lighter inks were hard to read in game).
+Theme.INK = "|cff24130a"
+Theme.SOFT = "|cff4a3218"
+Theme.MEND = "|cff145214"
+Theme.INK_RGB = { 0.14, 0.075, 0.04 }
 -- Colors on the dark hall.
 Theme.LIGHT = "|cffeadfca"
 Theme.DIM = "|cffa8987e"
@@ -100,12 +100,16 @@ local function classColor(token)
     return token and ((C_ClassColor and KKC.try(C_ClassColor.GetClassColor, token)) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[token]))
 end
 
--- Class colors are made for dark backgrounds; darken them so they read on parchment.
+-- Class colors are made for dark backgrounds; darken them so they read on parchment. Each is darkened by its own
+-- brightness, so pale ones (Priest white, Rogue yellow, Warrior tan) end up as dark as the deep ones: one fixed
+-- factor left those nearly invisible in game.
+local INK_LUMINANCE = 0.22
+
 function Theme.ClassInk(token)
     local c = classColor(token)
     if not (c and c.r) then return Theme.INK end
-    -- 0.58 was too pale in game (Warrior tan and Priest white nearly vanished); 0.42 keeps the hue and reads.
-    local f = 0.42
+    local lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+    local f = math.min(1, INK_LUMINANCE / math.max(lum, 0.01))
     return ("|cff%02x%02x%02x"):format(c.r * f * 255, c.g * f * 255, c.b * f * 255)
 end
 
@@ -157,6 +161,13 @@ end
 -- Returns the banner title text, or nil without a title.
 function Theme.WarFrame(f, title)
     local F = Theme.F()
+    -- A solid page under the parchment art: the art has torn, see-through edges and thin spots, and without this
+    -- whatever lies behind (the battle card, under the copy box) showed through.
+    local backing = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+    backing:SetPoint("TOPLEFT", 10, -10)
+    backing:SetPoint("BOTTOMRIGHT", -10, 10)
+    backing:SetColorTexture(0.80, 0.69, 0.50, 1)
+
     local bg = f:CreateTexture(nil, "BACKGROUND", nil, -7)
     bg:SetPoint("TOPLEFT", 8, -8)
     bg:SetPoint("BOTTOMRIGHT", -8, 8)
@@ -182,22 +193,27 @@ end
 -- a faint emblem. Returns { border, banner, title, emblem } so a docked hall can hide its own frame.
 function Theme.DarkFrame(f, title)
     local F = Theme.F()
-    local bg = f:CreateTexture(nil, "BACKGROUND", nil, -8)
-    bg:SetPoint("TOPLEFT", 6, -6)
-    bg:SetPoint("BOTTOMRIGHT", -6, 6)
+    -- Solid underneath, so the see-through parts of the parchment art don't show the game world.
+    local backing = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+    backing:SetPoint("TOPLEFT", 6, -6)
+    backing:SetPoint("BOTTOMRIGHT", -6, 6)
+    backing:SetColorTexture(0.08, 0.06, 0.05, 1)
+
+    local bg = f:CreateTexture(nil, "BACKGROUND", nil, -7)
+    bg:SetAllPoints(backing)
     if Theme.Atlas(bg, "ChromieTime-Parchment") then
         bg:SetVertexColor(0.30, 0.24, 0.19) -- parchment grain, darkened
     else
-        bg:SetColorTexture(0.10, 0.07, 0.05, 0.97)
+        bg:Hide()
     end
-    local wash = f:CreateTexture(nil, "BACKGROUND", nil, -7)
-    wash:SetAllPoints(bg)
+    local wash = f:CreateTexture(nil, "BACKGROUND", nil, -6)
+    wash:SetAllPoints(backing)
     wash:SetColorTexture(F.tint[1], F.tint[2], F.tint[3], 0.35)
-    local vignette = f:CreateTexture(nil, "BACKGROUND", nil, -6)
-    vignette:SetAllPoints(bg)
+    local vignette = f:CreateTexture(nil, "BACKGROUND", nil, -5)
+    vignette:SetAllPoints(backing)
     vignette:SetColorTexture(0, 0, 0, 0.30)
 
-    local emblem = f:CreateTexture(nil, "BACKGROUND", nil, -5)
+    local emblem = f:CreateTexture(nil, "BACKGROUND", nil, -4)
     emblem:SetSize(320, 320)
     emblem:SetPoint("CENTER", 90, -20)
     if Theme.Atlas(emblem, F.emblem) then emblem:SetAlpha(0.06) else emblem:Hide() end

@@ -62,14 +62,9 @@ local function debug()
         st.lastCode and (" (last code " .. tostring(st.lastCode) .. ")") or "", st.dropped, KKC.Sync.Pending()))
     KKC.say("  chat lockdown: " .. yesNo(C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown)))
 
+    -- Only IsEnabled: every other C_Discord function (the guild link status too) is restricted to Blizzard's UI.
     local D = C_Discord
-    if D and D.GetGuildLinkStatus then
-        local linked, channel, server = KKC.try(D.GetGuildLinkStatus)
-        KKC.say(("  Discord: enabled %s, guild linked %s %s"):format(yesNo(D.IsEnabled and KKC.try(D.IsEnabled)), yesNo(linked),
-            (KKC.readable(server) and server or "") .. " " .. (KKC.readable(channel) and channel and ("#" .. channel) or "")))
-    else
-        KKC.say("  Discord API: " .. yesNo(false))
-    end
+    KKC.say("  Discord integration enabled: " .. yesNo(D and D.IsEnabled and KKC.try(D.IsEnabled)))
 
     local first, second = UnitName("player")
     KKC.say(("  names: UnitName = [%s] [%s], full = [%s], regional unique: %s"):format(tostring(first), tostring(second),

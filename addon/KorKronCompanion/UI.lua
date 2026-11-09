@@ -44,6 +44,7 @@ function UI.ShowCopy(body, title, hint)
     if not copyFrame then
         local f = panel("KorKronCompanionCopy", 540, 380)
         f:SetPoint("CENTER", 0, 40)
+        f:SetFrameStrata("FULLSCREEN_DIALOG") -- always above the battle card it was opened from
         f.title = Theme.Text(f, 20, "CENTER", true)
         f.title:SetPoint("TOP", 0, -26)
         f.hint = Theme.Text(f, 11, "CENTER")
@@ -58,6 +59,7 @@ function UI.ShowCopy(body, title, hint)
         edit:SetMultiLine(true)
         edit:SetAutoFocus(true)
         edit:SetFontObject(ChatFontNormal)
+        Theme.Font(edit, 14)
         edit:SetTextColor(unpack(Theme.INK_RGB))
         edit:SetWidth(450)
         edit:SetScript("OnEscapePressed", function() f:Hide() end)
@@ -86,31 +88,23 @@ end
 -- ------------------------------------------------------------------------------------------------
 
 local card
-local ROWS = 14
-local ROW_TOP, ROW_STEP = -178, 17
+local ROWS = 13
+local ROW_TOP, ROW_STEP = -182, 20
 
-local function discordLine()
-    local D = C_Discord
-    if not (D and D.GetGuildLinkStatus) then return "" end
-    local linked, channel = KKC.try(D.GetGuildLinkStatus)
-    if KKC.readable(linked) and linked then
-        local where = (KKC.readable(channel) and channel and channel ~= "") and (" #" .. channel) or ""
-        return Theme.SOFT .. "Word sent to the guild reaches Discord" .. where .. "|r"
-    end
-    return Theme.SOFT .. "Guild chat is not linked to Discord|r"
-end
+-- (No Discord line here: every C_Discord function but IsEnabled is restricted to Blizzard's UI. Calling
+-- GetGuildLinkStatus from the card is what raised the "blocked from an action" popup.)
 
 local function makeRows(parent, x, width)
     local rows = {}
     for i = 1, ROWS do
         local y = ROW_TOP - (i - 1) * ROW_STEP
-        local left = Theme.Text(parent, 13)
+        local left = Theme.Text(parent, 15)
         left:SetPoint("TOPLEFT", x, y)
-        left:SetWidth(width - 92) -- long names end in "..." instead of running into the numbers
+        left:SetWidth(width - 100) -- long names end in "..." instead of running into the numbers
         left:SetWordWrap(false)
-        local right = Theme.Text(parent, 11, "RIGHT")
+        local right = Theme.Text(parent, 13, "RIGHT")
         right:SetPoint("TOPRIGHT", parent, "TOPLEFT", x + width, y - 1)
-        right:SetWidth(90)
+        right:SetWidth(98)
         rows[i] = { left = left, right = right }
     end
     return rows
@@ -134,40 +128,40 @@ local function setRows(rows, list, fill)
 end
 
 local function buildCard()
-    local f = panel("KorKronCompanionCard", 660, 610, "Battle Report") -- wide: Forever names are "First Surname"
+    local f = panel("KorKronCompanionCard", 680, 620, "Battle Report") -- wide: Forever names are "First Surname"
     f:SetPoint("CENTER", 0, 10)
 
     -- Everything stays inside the iron border (about 36 px on each side).
-    f.place = Theme.Text(f, 22, "CENTER", true)
-    f.place:SetPoint("TOP", 0, -48)
-    f.when = Theme.Text(f, 12, "CENTER")
+    f.place = Theme.Text(f, 24, "CENTER", true)
+    f.place:SetPoint("TOP", 0, -46)
+    f.when = Theme.Text(f, 14, "CENTER")
     f.when:SetPoint("TOP", f.place, "BOTTOM", 0, -4)
-    f.size = Theme.Text(f, 12, "CENTER")
+    f.size = Theme.Text(f, 14, "CENTER")
     f.size:SetPoint("TOP", f.when, "BOTTOM", 0, -4)
-    f.size:SetWidth(580)
-    f.first = Theme.Text(f, 12, "CENTER")
+    f.size:SetWidth(600)
+    f.first = Theme.Text(f, 14, "CENTER")
     f.first:SetPoint("TOP", f.size, "BOTTOM", 0, -3)
-    f.first:SetWidth(580)
+    f.first:SetWidth(600)
     local top = Theme.Divider(f, 420)
     top:SetPoint("TOP", f.first, "BOTTOM", 0, -2)
 
-    f.membersHeader = Theme.Text(f, 16, "LEFT", true)
-    f.membersHeader:SetPoint("TOPLEFT", 40, ROW_TOP + 22)
-    f.enemiesHeader = Theme.Text(f, 16, "LEFT", true)
-    f.enemiesHeader:SetPoint("TOPLEFT", 344, ROW_TOP + 22)
-    f.memberRows = makeRows(f, 40, 288)
-    f.enemyRows = makeRows(f, 344, 276)
+    f.membersHeader = Theme.Text(f, 18, "LEFT", true)
+    f.membersHeader:SetPoint("TOPLEFT", 40, ROW_TOP + 26)
+    f.enemiesHeader = Theme.Text(f, 18, "LEFT", true)
+    f.enemiesHeader:SetPoint("TOPLEFT", 354, ROW_TOP + 26)
+    f.memberRows = makeRows(f, 40, 298)
+    f.enemyRows = makeRows(f, 354, 286)
 
     local bottom = Theme.Divider(f, 420)
-    bottom:SetPoint("BOTTOM", 0, 160)
-    f.descLabel = Theme.Text(f, 15, "LEFT", true)
-    f.descLabel:SetPoint("BOTTOMLEFT", 42, 136)
+    bottom:SetPoint("BOTTOM", 0, 142)
+    f.descLabel = Theme.Text(f, 17, "LEFT", true)
+    f.descLabel:SetPoint("BOTTOMLEFT", 42, 120)
     f.descLabel:SetText(Theme.BLOOD .. "Account of the battle|r")
 
     local box = CreateFrame("Frame", nil, f)
-    box:SetPoint("BOTTOMLEFT", 38, 80)
-    box:SetPoint("BOTTOMRIGHT", -38, 80)
-    box:SetHeight(52)
+    box:SetPoint("BOTTOMLEFT", 38, 64)
+    box:SetPoint("BOTTOMRIGHT", -38, 64)
+    box:SetHeight(54)
     local boxBg = box:CreateTexture(nil, "BACKGROUND")
     boxBg:SetAllPoints()
     boxBg:SetColorTexture(0.30, 0.17, 0.06, 0.10)
@@ -178,15 +172,13 @@ local function buildCard()
     desc:SetAutoFocus(false)
     desc:SetMaxLetters(400)
     desc:SetFontObject(ChatFontNormal)
+    Theme.Font(desc, 15)
     desc:SetTextColor(unpack(Theme.INK_RGB))
     desc:SetScript("OnEscapePressed", desc.ClearFocus)
     desc:SetScript("OnTextChanged", function(self, user)
         if user and f.engagement then f.engagement.description = self:GetText() end
     end)
     f.desc = desc
-
-    f.discord = Theme.Text(f, 11, "CENTER")
-    f.discord:SetPoint("BOTTOM", 0, 62)
 
     f.buttons = {
         Theme.Button(f, "Scribe report", 124, "Copy the battle report text (Date, Time, Brief Description and the details) to paste into the Discord post.",
@@ -198,7 +190,7 @@ local function buildCard()
         Theme.Button(f, "Close", 90, nil, function() f:Hide() end),
     }
     -- Centered row, clear of the bottom border.
-    f.buttons[1]:SetPoint("BOTTOMLEFT", 66, 30)
+    f.buttons[1]:SetPoint("BOTTOMLEFT", 94, 30)
     for i = 2, #f.buttons do f.buttons[i]:SetPoint("LEFT", f.buttons[i - 1], "RIGHT", 8, 0) end
     f.hint = Theme.Text(f, 13, "CENTER")
     f.hint:SetPoint("BOTTOM", 0, 34)
@@ -242,7 +234,6 @@ local function fillCard(e)
     end)
 
     if not card.desc:HasFocus() then card.desc:SetText(e.description or KKC.Report.Description(e)) end
-    card.discord:SetText(discordLine())
 end
 
 function UI.ShowCard(e)

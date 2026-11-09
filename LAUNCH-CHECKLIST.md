@@ -81,6 +81,11 @@ Run `/kkc debug` first and keep its output.
 - [ ] A fight you were both in shows only on **My fights**, never in the feed.
 
 ## 5. Bridge
+- [ ] **Sound the horn** on a real battle (not the test card, where it's disabled) posts the line in `/g` with no
+      "blocked" popup. `SendChatMessage` is flagged `HasRestrictions` (it's fine from a button click in other
+      clients). If it's blocked here, the horn has to become "copy the line" instead.
+- [ ] The addon can't see whether guild chat is linked to Discord: every `C_Discord` call except `IsEnabled` is
+      restricted (calling `GetGuildLinkStatus` raised the earlier popup).
 - [ ] **Share to guild** posts one line in `/g`, and it shows up in the linked Discord channel.
 
 ## Things to note for v0.2

@@ -244,7 +244,7 @@ end
 
 -- When the game blocks something this addon tried, say which function it was (the popup doesn't).
 local function onBlocked(culprit, func)
-    if culprit == ADDON then
+    if type(culprit) == "string" and culprit:find(ADDON, 1, true) then
         KKC.say(KKC.RED .. "the game blocked|r " .. tostring(func) .. KKC.RED .. ". Please send this line to the addon author.|r")
     end
 end
