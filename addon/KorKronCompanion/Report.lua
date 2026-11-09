@@ -66,7 +66,16 @@ function KKC.Ambushed(e)
     return not opened
 end
 
+-- "A", "A and B", "A, B and C", "A, B and 2 more".
+local function joinPlaces(list)
+    if #list <= 1 then return list[1] or "?" end
+    if #list == 2 then return list[1] .. " and " .. list[2] end
+    if #list == 3 then return list[1] .. ", " .. list[2] .. " and " .. list[3] end
+    return list[1] .. ", " .. list[2] .. (" and %d more"):format(#list - 2)
+end
+
 function Report.Place(e)
+    if e.campaign then return joinPlaces(e.zones) end
     if e.subzone and e.subzone ~= "" and e.subzone ~= e.zone then return e.subzone end
     return e.zone or "?"
 end
@@ -100,8 +109,28 @@ local function outcome(e, s)
     return pick(e, OUTCOMES.driven)
 end
 
+local CAMPAIGN = { "A patrol through %s: %s.", "The warband marched on %s: %s.", "We held the field around %s: %s." }
+
+local function times(n)
+    if n == 1 then return "once" elseif n == 2 then return "twice" end
+    return n .. " times"
+end
+
+-- "4 clashes with 14 Alliance, ambushed twice and striking first once"
+local function campaignClashes(e, s, faction)
+    local text = ("%d clashes with %d %s"):format(e.fights, s.enemies, faction)
+    local parts = {}
+    if (e.ambushes or 0) > 0 then parts[#parts + 1] = "ambushed " .. times(e.ambushes) end
+    if (e.struck or 0) > 0 then parts[#parts + 1] = "striking first " .. times(e.struck) end
+    if #parts > 0 then text = text .. ", " .. table.concat(parts, " and ") end
+    return text
+end
+
 function Report.Description(e)
     local s, faction, place = KKC.Stats(e), KKC.enemyFaction(), Report.Place(e)
+    if e.campaign then
+        return pick(e, CAMPAIGN):format(place, campaignClashes(e, s, faction)) .. outcome(e, s)
+    end
     local foe = s.enemies == 1 and ("a lone " .. faction) or (s.enemies .. " " .. faction)
     local ambushed = KKC.Ambushed(e)
     local kind = ambushed and "ambush" or (ambushed == false and "struck" or "clash")
@@ -139,6 +168,7 @@ function Report.CopyText(e, description)
 
     local location = e.zone or "?"
     if e.subzone and e.subzone ~= "" and e.subzone ~= e.zone then location = location .. " - " .. e.subzone end
+    if e.campaign then location = e.location end
 
     local lines = {
         "Date: " .. date("%Y-%m-%d", e.start),
@@ -146,15 +176,24 @@ function Report.CopyText(e, description)
         "Brief Description: " .. (description or Report.Description(e)),
         "",
         "Location: " .. location,
-        ("Kor'kron (%d): %s"):format(s.members, nameList(members, 40)),
     }
+    if e.campaign then
+        lines[#lines + 1] = ("Clashes: %d (ambushed %d, struck first %d)"):format(e.fights, e.ambushes or 0, e.struck or 0)
+    end
+    lines[#lines + 1] = ("Kor'kron (%d): %s"):format(s.members, nameList(members, 40))
     local leaders, assists = KKC.Leaders(e)
     if #leaders > 0 then lines[#lines + 1] = "Leaders: " .. table.concat(leaders, ", ") end
     if #assists > 0 then lines[#lines + 1] = "Assists: " .. table.concat(assists, ", ") end
     if (e.allies or 0) > 0 then lines[#lines + 1] = ("Other allies: %d"):format(e.allies) end
     lines[#lines + 1] = ("Enemies (%d): %s"):format(s.enemies, s.enemies > 0 and nameList(enemies, 30) or "unknown")
-    lines[#lines + 1] = ("Slain: %d | Fallen: %s"):format(s.kills, #s.fallen > 0 and table.concat(s.fallen, ", ") or "none")
-    local ambushed = KKC.Ambushed(e)
+    local fallen = {}
+    for _, name in ipairs(s.fallen) do
+        local deaths = e.members[name] and e.members[name].deaths or 1
+        fallen[#fallen + 1] = deaths > 1 and (name .. " x" .. deaths) or name
+    end
+    lines[#lines + 1] = ("Slain: %d | Fallen: %s"):format(s.kills, #fallen > 0 and table.concat(fallen, ", ") or "none")
+    local ambushed -- a campaign's openings are on its Clashes line
+    if not e.campaign then ambushed = KKC.Ambushed(e) end
     local opener = ambushed and (" | Struck first: " .. KKC.enemyFaction()) or (ambushed == false and " | Struck first: Kor'kron" or "")
     lines[#lines + 1] = ("Fighting time: %s | First into battle: %s%s"):format(KKC.duration(e.pvpSeconds), KKC.Initiator(e) or "?", opener)
     return table.concat(lines, "\n")
@@ -164,7 +203,10 @@ end
 function Report.ShareLine(e)
     local s, place, faction = KKC.Stats(e), Report.Place(e), KKC.enemyFaction()
     local line
-    if KKC.Ambushed(e) then
+    if e.campaign then
+        line = ("[Kor'kron] Campaign through %s - %d clashes, %d against %d %s, %d slain"):format(place, e.fights, s.members, s.enemies, faction, s.kills)
+        line = line .. (#s.fallen > 0 and (", %s fell in glory."):format(fallenText(s.fallen)) or ", none of ours lost.")
+    elseif KKC.Ambushed(e) then
         local outcome = s.kills > 0 and (", %d slain"):format(s.kills) or ""
         if #s.fallen > 0 then outcome = outcome .. (", %s fell in glory"):format(fallenText(s.fallen)) end
         line = ("[Kor'kron] Ambushed at %s - %d %s fell on %d of us%s."):format(place, s.enemies, faction, s.members, outcome)
@@ -184,7 +226,9 @@ end
 function Report.Headline(e)
     local s = KKC.Stats(e)
     local parts = { ("%s - %d against %d"):format(Report.Place(e), s.members, s.enemies) }
-    if KKC.Ambushed(e) then parts[#parts + 1] = "ambush" end
+    if e.campaign then
+        parts[#parts + 1] = ("%d clashes"):format(e.fights)
+    elseif KKC.Ambushed(e) then parts[#parts + 1] = "ambush" end
     if s.kills > 0 then parts[#parts + 1] = s.kills .. " slain" end
     if #s.fallen > 0 then parts[#parts + 1] = #s.fallen .. " fallen" end
     return table.concat(parts, ", ")

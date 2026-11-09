@@ -198,7 +198,10 @@ local function buildCard()
     desc:SetTextColor(unpack(Theme.INK_RGB))
     desc:SetScript("OnEscapePressed", desc.ClearFocus)
     desc:SetScript("OnTextChanged", function(self, user)
-        if user and f.engagement then f.engagement.description = self:GetText() end
+        if not (user and f.engagement) then return end
+        f.engagement.description = self:GetText()
+        -- A campaign is rebuilt from the log each time: keep its account on its first fight.
+        if f.engagement.campaign then f.engagement.anchor.campaignDescription = self:GetText() end
     end)
     f.desc = desc
 
@@ -223,24 +226,36 @@ end
 local function fillCard(e)
     local s = KKC.Stats(e)
     card.engagement = e
+    if card.banner then card.banner:SetText(e.campaign and "Campaign Report" or "Battle Report") end
+    card.descLabel:SetText(e.campaign and "Account of the campaign" or "Account of the battle")
     card.place:SetText(KKC.Report.Place(e))
-    local where = (e.subzone ~= "" and e.subzone ~= e.zone) and (e.zone .. ", ") or ""
+    local where = (not e.campaign and e.subzone ~= "" and e.subzone ~= e.zone) and (e.zone .. ", ") or ""
     card.when:SetText(Theme.INK .. where .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start) .. "|r")
-    local ambushed = KKC.Ambushed(e)
-    local opening = ambushed and (Theme.BLOOD .. "Ambushed|r  ~  ") or (ambushed == false and "We struck first  ~  " or "")
-    card.size:SetText(("%s%d against %d  ~  %s of battle  ~  %d slain"):format(
-        opening, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills))
     local leaders = KKC.Leaders(e)
-    card.first:SetText(("First into battle: %s%s%s"):format(KKC.Initiator(e) or "?",
-        #leaders > 0 and ("  ~  Led by " .. table.concat(leaders, ", ")) or "",
-        e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
+    local led = #leaders > 0 and ("  ~  Led by " .. table.concat(leaders, ", ")) or ""
+    if e.campaign then
+        card.size:SetText(("%d clashes  ~  %d against %d  ~  %s of battle  ~  %d slain"):format(
+            e.fights, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills))
+        local openings = {}
+        if e.ambushes > 0 then openings[#openings + 1] = Theme.BLOOD .. "Ambushed " .. e.ambushes .. "|r" end
+        if e.struck > 0 then openings[#openings + 1] = "Struck first " .. e.struck end
+        openings[#openings + 1] = "First into battle: " .. (KKC.Initiator(e) or "?")
+        card.first:SetText(table.concat(openings, "  ~  ") .. led)
+    else
+        local ambushed = KKC.Ambushed(e)
+        local opening = ambushed and (Theme.BLOOD .. "Ambushed|r  ~  ") or (ambushed == false and "We struck first  ~  " or "")
+        card.size:SetText(("%s%d against %d  ~  %s of battle  ~  %d slain"):format(
+            opening, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills))
+        card.first:SetText(("First into battle: %s%s%s"):format(KKC.Initiator(e) or "?", led,
+            e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
+    end
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
 
     card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members))
     setRows(card.memberRows, KKC.sortedValues(e.members), function(m)
         local title = KKC.rpTitle(m.name)
         local l = (title and (Theme.SOFT .. title .. "|r ") or "") .. Theme.ClassInk(m.class) .. m.name .. "|r"
-            .. (m.died and (" " .. SKULL) or "")
+            .. (m.died and (" " .. SKULL .. ((m.deaths or 1) > 1 and (Theme.SOFT .. "x" .. m.deaths .. "|r") or "")) or "")
         local dmg = (m.dmg or 0) > 0 and KKC.shortNumber(m.dmg) or ""
         local mend = (m.heal or 0) > 0 and (Theme.MEND .. KKC.shortNumber(m.heal) .. " mend|r") or ""
         return l, dmg, mend
@@ -270,16 +285,25 @@ KKC.Listen("EngagementUpdated", function(e)
     if card and card:IsShown() and card.engagement == e then fillCard(e) end
 end)
 
+-- A fight that just closed may have joined the campaign on the card.
+KKC.Listen("EngagementClosed", function()
+    if card and card:IsShown() and card.engagement and card.engagement.campaign then
+        fillCard(KKC.Campaign.Refresh(card.engagement))
+    end
+end)
+
 function UI.CopyReport(e)
     if not e then return end
-    UI.ShowCopy(KKC.Report.CopyText(e, e.description), "Battle Report",
+    UI.ShowCopy(KKC.Report.CopyText(e, e.description), e.campaign and "Campaign Report" or "Battle Report",
         "Ctrl+C, then paste it into the post. Title: your main's name and surname. Attach the captured likeness of the card.")
 end
 
 function UI.Share(e)
     if not e or e.feed or e.test then return end
-    if e.shared then return KKC.say("the horn has already sounded for this battle.") end
-    if UI.SendGuild(KKC.Report.ShareLine(e)) then e.shared = true end
+    local holder = e.campaign and e.anchor or e -- a campaign view is rebuilt each time; remember it on its first fight
+    local key = e.campaign and "campaignShared" or "shared"
+    if holder[key] then return KKC.say("the horn has already sounded for this " .. (e.campaign and "campaign." or "battle.")) end
+    if UI.SendGuild(KKC.Report.ShareLine(e)) then holder[key] = true end
 end
 
 function UI.SendGuild(line)

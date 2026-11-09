@@ -19,7 +19,8 @@ checkout links it instead; it's not tracked in git.)
 | `/kkc day` / `week` / `lastweek` / `month` / `lastmonth` | The hall's Chronicle for that period |
 | `/kkc battles` / `ledger` / `settings` | The hall on that section |
 | `/kkc guild [n]` | The hall's From the field section, or guild feed battle n's card |
-| `/kkc card [n]` / `copy [n]` | Battle card / report text for battle n (latest notable by default) |
+| `/kkc card [n]` / `copy [n]` | Battle card / report text for battle n (default: the latest notable battle's whole campaign) |
+| `/kkc campaign [n]` | Campaign card for outing n: every fight less than 30 min apart as one report |
 | `/kkc log [all]` / `ledger chat` | Recent battles / War Ledger totals in chat |
 | `/kkc notify off\|quiet\|toast\|prompt` | How you're told about a battle (default `quiet`: one chat line) |
 | `/kkc all on\|off` | Tell you even when you weren't first into battle |

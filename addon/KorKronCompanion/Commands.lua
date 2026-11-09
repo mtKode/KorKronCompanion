@@ -1,8 +1,9 @@
 --[[
   /kkc                 open (or close) the Hall of the Kor'kron
   /kkc log [all]       recent battles in chat (all: with skirmishes)
-  /kkc card [n]        battle card for battle n (default: the latest notable one)
-  /kkc copy [n]        battle report text straight to the copy box
+  /kkc card [n]        battle card for battle n (default: the latest notable one, or its whole campaign)
+  /kkc campaign [n]    campaign card for outing n (default: the latest): every fight of one night as one report
+  /kkc copy [n]        report text straight to the copy box (default like card)
   /kkc day | week | lastweek | month | lastmonth    the hall's chronicle for that period
   /kkc battles | ledger | settings                  the hall on that section
   /kkc guild [n]       the hall's From the field section, or the battle card of guild feed battle n
@@ -18,12 +19,16 @@
 
 local _, KKC = ...
 
+-- Battle n of the log; without n the latest notable battle, or the whole campaign it belongs to (one report per
+-- outing is what the guild posts).
 local function pick(n)
     local log = KKC.db.log
     n = tonumber(n)
     if n then return log[n] end
-    for _, e in ipairs(log) do if not e.minor then return e end end
-    return log[1]
+    local latest
+    for _, e in ipairs(log) do if not e.minor then latest = e; break end end
+    latest = latest or log[1]
+    return latest and (KKC.Campaign.Of(latest) or latest)
 end
 
 local function yesNo(v)
@@ -96,6 +101,13 @@ commands.copy = function(arg)
     KKC.UI.CopyReport(e)
 end
 
+commands.campaign = function(arg)
+    local list = KKC.Campaign.Group(KKC.db.log)
+    local c = list[tonumber(arg) or 1]
+    if not c then return KKC.say("no campaign " .. (arg ~= "" and arg or "") .. " yet.") end
+    KKC.UI.ShowCard(KKC.Campaign.View(c))
+end
+
 commands.hall = function() KKC.Hub.Toggle() end
 for _, period in ipairs({ "day", "week", "lastweek", "month", "lastmonth" }) do
     commands[period] = function() KKC.Hub.Show("chronicle", period) end
@@ -166,6 +178,6 @@ SlashCmdList.KORKRONCOMPANION = function(msg)
     local cmd, arg = (msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
     local fn = commands[cmd ~= "" and cmd or "hall"]
     if fn then return fn(arg) end
-    KKC.say("commands: (none) opens the hall, log, card [n], copy [n], day, week, lastweek, month, lastmonth, battles, ledger, "
+    KKC.say("commands: (none) opens the hall, log, card [n], campaign [n], copy [n], day, week, lastweek, month, lastmonth, battles, ledger, "
         .. "settings, guild [n], sync on|off, notify off|quiet|toast|prompt, all on|off, test, close, debug, reset")
 end

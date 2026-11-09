@@ -33,6 +33,12 @@ who fought (meter, sightings, sync) and damage/healing totals (meter). The battl
   seen, an honor kill came in, or the meter lists an enemy player.
 - **Engagement**: PvP segments merged while the gap between them is under `mergeGap` (60 s). It closes when
   `mergeGap` passes with no new PvP combat.
+- **Campaign**: one outing, the size the guild reports at (one post per night, "Time: 20:15 - 21:00"). Engagements
+  less than `campaignGap` (30 min) apart, in any zone, are one campaign, so a wipe, corpse run and regroup stays in
+  it. Nothing is stored: campaigns are grouped from the log when needed (`Campaign.lua`), and a campaign view looks
+  like an engagement (summed damage and healing, enemies, kills, deaths, leaders), so the battle card and report texts
+  serve both. Its account is kept on its first fight (`campaignDescription`). `/kkc card` opens the latest campaign;
+  each fight can still be reported on its own from the Battles list, where fights are listed under their campaign.
 - **Notable**: an engagement worth bothering you about. It needs at least one of: a kill, a guildie death, 2+ enemy
   players, or 20+ s of PvP combat. One stray hit from a passing rogue is logged as *minor* and never notifies.
 - **First into battle**: the guildie whose engagement started first (ties: alphabetical). They're named in the

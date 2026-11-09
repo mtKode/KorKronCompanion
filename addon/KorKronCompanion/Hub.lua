@@ -36,6 +36,10 @@ local SECTIONS = {
 }
 
 local function headline(e)
+    if e.campaign then
+        return Theme.GOLD .. "Campaign|r  " .. KKC.Report.Headline(e) .. "  " .. Theme.DIM .. "~ until "
+            .. date("%H:%M", e.stop) .. "|r"
+    end
     local tags = {}
     local ambushed = KKC.Ambushed(e)
     if ambushed then tags[#tags + 1] = "|cffff6050ambush|r" elseif ambushed == false then tags[#tags + 1] = "struck first" end
@@ -60,11 +64,12 @@ local function battleRow(parent, width)
     b.what:SetPoint("RIGHT", -4, 0)
     b.what:SetWordWrap(false)
     b:SetScript("OnClick", function(self) if self.engagement then KKC.UI.ShowCard(self.engagement) end end)
-    function b:Set(e)
+    -- inCampaign: a fight listed under its campaign row, shown indented with only its time.
+    function b:Set(e, inCampaign)
         self.engagement = e
         if not e then return self:Hide() end
-        self.when:SetText(Theme.DIM .. date("%a %d %b %H:%M", e.start) .. "|r")
-        self.what:SetText(headline(e))
+        self.when:SetText(Theme.DIM .. (inCampaign and "        " .. date("%H:%M", e.start) or date("%a %d %b %H:%M", e.start)) .. "|r")
+        self.what:SetText((inCampaign and "    " or "") .. headline(e))
         self:Show()
     end
     return b
@@ -222,18 +227,32 @@ local function buildBattles(parent)
     p.minor:SetPoint("BOTTOMRIGHT", 0, 0)
 
     function p:Refresh()
-        local list = {}
-        for _, e in ipairs(KKC.db.log) do
-            if self.showMinor or not e.minor then list[#list + 1] = e end
+        -- A campaign (two or more fights in one outing) gets its own row, its fights listed under it.
+        local list, battles = {}, 0
+        for _, c in ipairs(KKC.Campaign.Group(KKC.db.log)) do
+            local fights = {}
+            for _, e in ipairs(c.fights) do
+                if self.showMinor or not e.minor then fights[#fights + 1] = e end
+            end
+            battles = battles + #fights
+            if #c.fights > 1 and #fights > 0 then
+                list[#list + 1] = { e = KKC.Campaign.View(c) }
+                for _, e in ipairs(fights) do list[#list + 1] = { e = e, inCampaign = true } end
+            elseif #fights > 0 then
+                list[#list + 1] = { e = fights[1] }
+            end
         end
         local pages = math.max(1, math.ceil(#list / BATTLE_ROWS))
         self.page = math.max(1, math.min(self.page, pages))
-        for i, r in ipairs(self.rows) do r:Set(list[(self.page - 1) * BATTLE_ROWS + i]) end
+        for i, r in ipairs(self.rows) do
+            local item = list[(self.page - 1) * BATTLE_ROWS + i]
+            r:Set(item and item.e, item and item.inCampaign)
+        end
         self.newer:SetEnabled(self.page > 1)
         self.older:SetEnabled(self.page < pages)
         self.pageText:SetText(Theme.DIM .. ("Page %d of %d"):format(self.page, pages) .. "|r")
         self.minor:SetSelected(self.showMinor)
-        self.sub:SetText(Theme.DIM .. (#list > 0 and ("%d battles recorded. Click one to read its report."):format(#list)
+        self.sub:SetText(Theme.DIM .. (#list > 0 and ("%d battles recorded. Click one to read its report, or a campaign for the whole outing."):format(battles)
             or "No battles recorded yet. The blades stay sheathed... for now.") .. "|r")
     end
     return p

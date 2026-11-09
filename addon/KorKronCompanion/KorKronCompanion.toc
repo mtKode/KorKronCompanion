@@ -9,6 +9,7 @@
 Core.lua
 Theme.lua
 Report.lua
+Campaign.lua
 Ledger.lua
 Summary.lua
 Tracker.lua

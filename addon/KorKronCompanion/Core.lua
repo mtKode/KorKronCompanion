@@ -157,6 +157,7 @@ KKC.defaults = {
         mergeGap = 60,          -- seconds out of combat before an engagement closes
         notableSeconds = 20,    -- this much PvP combat makes an engagement notable
         notableEnemies = 2,     -- or this many enemy players
+        campaignGap = 1800,     -- fights closer than this (seconds) are one campaign: one report for the outing
     },
     log = {},   -- your engagements, newest first
     feed = {},  -- guildies' fights you weren't in, newest first
