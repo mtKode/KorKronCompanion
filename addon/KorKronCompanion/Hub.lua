@@ -524,9 +524,24 @@ function Hub.Dock()
     hall:ClearAllPoints()
     hall:SetPoint("TOPLEFT", L, "TOPLEFT", 2, -22)
     hall:SetPoint("BOTTOMRIGHT", L, "BOTTOMRIGHT", -2, 2)
-    hall:SetFrameStrata(L:GetFrameStrata())
-    -- Above Legacy's pages (they sit at frame level 100), so their buttons can't be clicked through ours.
-    hall:SetFrameLevel(math.max(L:GetFrameLevel(), 100) + 20)
+    -- Above everything on Legacy's pages (the pages sit at level 100, their cards and bars a little higher), but
+    -- below the window's portrait (level 400). The deepest level actually used is measured, since whichever page was
+    -- open last stays shown underneath. Only reading levels, never changing Blizzard's frames.
+    local top = math.max(L:GetFrameLevel(), 100)
+    local function deepest(frame, depth)
+        if depth > 8 then return end
+        top = math.max(top, frame:GetFrameLevel())
+        for _, child in ipairs({ frame:GetChildren() }) do deepest(child, depth + 1) end
+    end
+    for _, page in ipairs(type(L.Pages) == "table" and L.Pages or {}) do pcall(deepest, page, 0) end
+    local container = type(L.PortraitContainer) == "table" and L.PortraitContainer
+    local portrait = container and container:GetFrameLevel() or 400
+    if top + 40 < portrait then
+        hall:SetFrameStrata(L:GetFrameStrata())
+        hall:SetFrameLevel(top + 10)
+    else
+        hall:SetFrameStrata("HIGH") -- no room under the portrait: a layer above the whole window instead
+    end
     setChrome(false)
     hall:Show()
     if tab then tab.selected:Show() end
