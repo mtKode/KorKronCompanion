@@ -230,7 +230,9 @@ local function fillCard(e)
     local opening = ambushed and (Theme.BLOOD .. "Ambushed|r  ~  ") or (ambushed == false and "We struck first  ~  " or "")
     card.size:SetText(("%s%d against %d  ~  %s of battle  ~  %d slain"):format(
         opening, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills))
-    card.first:SetText(("First into battle: %s%s"):format(KKC.Initiator(e) or "?",
+    local leaders = KKC.Leaders(e)
+    card.first:SetText(("First into battle: %s%s%s"):format(KKC.Initiator(e) or "?",
+        #leaders > 0 and ("  ~  Led by " .. table.concat(leaders, ", ")) or "",
         e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
 

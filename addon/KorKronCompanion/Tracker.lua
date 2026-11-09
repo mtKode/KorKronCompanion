@@ -159,6 +159,15 @@ local function isPlayerGUID(guid)
     return KKC.readable(guid) and type(guid) == "string" and guid:find("^Player%-") ~= nil
 end
 
+-- "leader", "assist" or nil: the unit's role in leading the party or raid.
+local function leadRole(unit)
+    local lead = KKC.try(UnitIsGroupLeader, unit)
+    if KKC.readable(lead) and lead then return "leader" end
+    local assist = KKC.try(UnitIsGroupAssistant, unit)
+    if KKC.readable(assist) and assist then return "assist" end
+end
+
+-- Who is in your party or raid right now: guild membership, class and lead role per name. Empty when solo.
 local function groupInfo()
     local info = {}
     local raid = IsInRaid()
@@ -170,9 +179,13 @@ local function groupInfo()
         if name then
             local inGuild = KKC.try(UnitIsInMyGuild, unit)
             local _, class = KKC.try(UnitClass, unit)
-            info[name] = { guild = KKC.readable(inGuild) and inGuild or false, class = KKC.readable(class) and class or nil }
+            info[name] = { guild = KKC.readable(inGuild) and inGuild or false, class = KKC.readable(class) and class or nil,
+                lead = leadRole(unit) }
         end
     end
+    -- In a party the units above don't include you; in a raid they do.
+    local me = KKC.me()
+    if n > 0 and me and not info[me] then info[me] = { guild = true, class = KKC.myClass(), lead = leadRole("player") } end
     return info
 end
 
@@ -319,6 +332,14 @@ local function addToEngagement(s)
     end
     e.allies = math.max(e.allies or 0, others)
 
+    -- Who led the group in any of the engagement's fights. A leader stays a leader even if they handed it on.
+    for name, g in pairs(s.group or {}) do
+        if g.lead then
+            e.leaders = e.leaders or {}
+            if e.leaders[name] ~= "leader" then e.leaders[name] = g.lead end
+        end
+    end
+
     scheduleClose()
     KKC.Fire("EngagementUpdated", e)
 end
@@ -445,6 +466,7 @@ function T.TestEngagement()
     e.enemies["Aldric"] = { name = "Aldric", class = "PRIEST", race = "Human", kills = 0 }
     e.enemies["Kaelen"] = { name = "Kaelen", class = "ROGUE", race = "Night Elf", kills = 0 }
     e.reports["Grukk"] = e.start + 4
+    e.leaders = { Grukk = "leader", [me] = "assist" }
     e.opened = false -- the Alliance struck first
     e.opens = { Grukk = true }
     return e

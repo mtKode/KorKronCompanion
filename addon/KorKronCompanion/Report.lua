@@ -12,6 +12,7 @@
     ownKills [name] = honor kills you got yourself (feeds the ledger)
     reports  [sender] = start time of that guildie's own engagement (picks who was first into battle)
     allies   number of non-guild allies seen in your group
+    leaders  [name] = "leader" | "assist"   who led your party or raid during the fights (nil when solo or unknown)
 ]]
 
 local _, KKC = ...
@@ -31,6 +32,17 @@ end
 function KKC.IsNotable(e)
     local set, s = KKC.settings(), KKC.Stats(e)
     return s.kills > 0 or #s.fallen > 0 or s.enemies >= set.notableEnemies or (e.pvpSeconds or 0) >= set.notableSeconds
+end
+
+-- Group leaders and raid assistants of an engagement, each sorted by name. Two empty lists when nobody led.
+function KKC.Leaders(e)
+    local leaders, assists = {}, {}
+    for name, role in pairs(e.leaders or {}) do
+        local list = role == "leader" and leaders or assists
+        list[#list + 1] = name
+    end
+    table.sort(leaders); table.sort(assists)
+    return leaders, assists
 end
 
 -- Whoever's engagement started first; ties go alphabetically so every client picks the same person.
@@ -136,6 +148,9 @@ function Report.CopyText(e, description)
         "Location: " .. location,
         ("Kor'kron (%d): %s"):format(s.members, nameList(members, 40)),
     }
+    local leaders, assists = KKC.Leaders(e)
+    if #leaders > 0 then lines[#lines + 1] = "Leaders: " .. table.concat(leaders, ", ") end
+    if #assists > 0 then lines[#lines + 1] = "Assists: " .. table.concat(assists, ", ") end
     if (e.allies or 0) > 0 then lines[#lines + 1] = ("Other allies: %d"):format(e.allies) end
     lines[#lines + 1] = ("Enemies (%d): %s"):format(s.enemies, s.enemies > 0 and nameList(enemies, 30) or "unknown")
     lines[#lines + 1] = ("Slain: %d | Fallen: %s"):format(s.kills, #s.fallen > 0 and table.concat(s.fallen, ", ") or "none")

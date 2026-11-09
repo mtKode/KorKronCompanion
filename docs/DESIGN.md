@@ -38,6 +38,10 @@ who fought (meter, sightings, sync) and damage/healing totals (meter). The battl
 - **First into battle**: the guildie whose engagement started first (ties: alphabetical). They're named in the
   reports and are the only one prompted by default. This is *not* the guild's event initiator, who gathered the group
   in Discord; the addon can't know that, and the report is posted by hand anyway. (In code: `KKC.Initiator`.)
+- **Members and leaders**: when each segment ends, the group is read once. Guildies who did damage or healing in the
+  meter become members; non-guild group members are only counted. Whoever is party or raid leader (or raid assistant)
+  at that moment is kept in `e.leaders`, and the report gets `Leaders:` / `Assists:` lines for Nazgrel, which asks who
+  led. A quick join-and-leave between fight ends is missed on purpose: only people actually contributing count.
 - **Ambush / struck first**: an auto attack, auto shot or spell cast while targeting an enemy player within 5 s before
   entering combat means *you* struck first. The fight counts as an ambush when the guildie first into battle didn't
   strike first. That changes the wording ("Ambushed by 5 Alliance at Tarren Mill…") and is counted in war reports.
