@@ -45,15 +45,15 @@ function UI.ShowCopy(body, title, hint)
         local f = panel("KorKronCompanionCopy", 540, 380)
         f:SetPoint("CENTER", 0, 40)
         f:SetFrameStrata("FULLSCREEN_DIALOG") -- always above the battle card it was opened from
-        f.title = Theme.Text(f, 20, "CENTER", true)
+        f.title = Theme.GoldTitle(f, 22)
         f.title:SetPoint("TOP", 0, -26)
         f.hint = Theme.Text(f, 11, "CENTER")
         f.hint:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
         f.hint:SetWidth(470)
-        local divider = Theme.Divider(f, 300)
-        divider:SetPoint("TOP", f.hint, "BOTTOM", 0, -2)
+        local rule = Theme.Rule(f, 460)
+        rule:SetPoint("TOP", f.hint, "BOTTOM", 0, -10)
         local scroll = CreateFrame("ScrollFrame", "KorKronCompanionCopyScroll", f, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 30, -96)
+        scroll:SetPoint("TOPLEFT", rule, "BOTTOMLEFT", -10, -10) -- just below the rule (which starts 40 px in)
         scroll:SetPoint("BOTTOMRIGHT", -48, 30)
         local edit = CreateFrame("EditBox", nil, scroll)
         edit:SetMultiLine(true)
@@ -75,7 +75,7 @@ function UI.ShowCopy(body, title, hint)
         copyFrame = f
     end
     copyFrame.body = body
-    copyFrame.title:SetText(Theme.BLOOD .. (title or "Battle Report") .. "|r")
+    copyFrame.title:SetText(title or "Battle Report")
     copyFrame.hint:SetText(hint or "Press Ctrl+C, then paste it into the battle report post.")
     copyFrame.edit:SetText(body)
     copyFrame:Show()
@@ -88,75 +88,97 @@ end
 -- ------------------------------------------------------------------------------------------------
 
 local card
+local CARD_W = 780
 local ROWS = 13
-local ROW_TOP, ROW_STEP = -182, 20
+local ROW_TOP, ROW_STEP = -212, 20
 
 -- (No Discord line here: every C_Discord function but IsEnabled is restricted to Blizzard's UI. Calling
 -- GetGuildLinkStatus from the card is what raised the "blocked from an action" popup.)
 
-local function makeRows(parent, x, width)
+-- One line per person: the name, then up to two right-aligned columns that never wrap (damage and mend for
+-- guildies; enemies use only the last one, for their skulls).
+local MEND_W, DMG_W, GAP = 86, 52, 6
+
+local function cell(parent, size, justify, width)
+    local fs = Theme.Text(parent, size, justify)
+    fs:SetWidth(width)
+    fs:SetWordWrap(false)
+    return fs
+end
+
+local function makeRows(parent, x, width, twoColumns, lastWidth)
     local rows = {}
+    lastWidth = lastWidth or MEND_W
+    local nameWidth = width - lastWidth - GAP - (twoColumns and (DMG_W + GAP) or 0)
     for i = 1, ROWS do
         local y = ROW_TOP - (i - 1) * ROW_STEP
-        local left = Theme.Text(parent, 15)
-        left:SetPoint("TOPLEFT", x, y)
-        left:SetWidth(width - 100) -- long names end in "..." instead of running into the numbers
-        left:SetWordWrap(false)
-        local right = Theme.Text(parent, 13, "RIGHT")
-        right:SetPoint("TOPRIGHT", parent, "TOPLEFT", x + width, y - 1)
-        right:SetWidth(98)
-        rows[i] = { left = left, right = right }
+        local row = {}
+        row.name = cell(parent, 15, "LEFT", nameWidth) -- long names end in "..." instead of running into the numbers
+        row.name:SetPoint("TOPLEFT", x, y)
+        row.last = cell(parent, 14, "RIGHT", lastWidth)
+        row.last:SetPoint("TOPRIGHT", parent, "TOPLEFT", x + width, y)
+        if twoColumns then
+            row.first = cell(parent, 14, "RIGHT", DMG_W)
+            row.first:SetPoint("TOPRIGHT", row.last, "TOPLEFT", -GAP, 0)
+        end
+        rows[i] = row
     end
     return rows
+end
+
+local function setRow(row, name, first, last)
+    row.name:SetText(name or "")
+    if row.first then row.first:SetText(first or "") end
+    row.last:SetText(last or "")
 end
 
 local function setRows(rows, list, fill)
     for i, row in ipairs(rows) do
         local item = list[i]
         if i == ROWS and #list > ROWS then
-            row.left:SetText(Theme.SOFT .. ("and %d more"):format(#list - ROWS + 1) .. "|r")
-            row.right:SetText("")
+            setRow(row, Theme.SOFT .. ("and %d more"):format(#list - ROWS + 1) .. "|r")
         elseif item then
-            local l, r = fill(item)
-            row.left:SetText(l)
-            row.right:SetText(r or "")
+            setRow(row, fill(item))
         else
-            row.left:SetText("")
-            row.right:SetText("")
+            setRow(row)
         end
     end
 end
 
 local function buildCard()
-    local f = panel("KorKronCompanionCard", 680, 620, "Battle Report") -- wide: Forever names are "First Surname"
+    -- 780 wide: Forever names are "First Surname", and a TRP3 title can come in front.
+    local f = panel("KorKronCompanionCard", CARD_W, 650, "Battle Report")
     f:SetPoint("CENTER", 0, 10)
 
-    -- Everything stays inside the iron border (about 36 px on each side).
-    f.place = Theme.Text(f, 24, "CENTER", true)
-    f.place:SetPoint("TOP", 0, -46)
+    -- Everything stays inside the iron border (about 36 px on each side), and the place name starts below the
+    -- banner, which hangs about 62 px into the card.
+    f.place = Theme.GoldTitle(f, 28)
+    f.place:SetPoint("TOP", 0, -68)
     f.when = Theme.Text(f, 14, "CENTER")
     f.when:SetPoint("TOP", f.place, "BOTTOM", 0, -4)
     f.size = Theme.Text(f, 14, "CENTER")
     f.size:SetPoint("TOP", f.when, "BOTTOM", 0, -4)
-    f.size:SetWidth(600)
+    f.size:SetWidth(CARD_W - 80)
     f.first = Theme.Text(f, 14, "CENTER")
     f.first:SetPoint("TOP", f.size, "BOTTOM", 0, -3)
-    f.first:SetWidth(600)
-    local top = Theme.Divider(f, 420)
-    top:SetPoint("TOP", f.first, "BOTTOM", 0, -2)
+    f.first:SetWidth(CARD_W - 80)
+    local top = Theme.Rule(f, CARD_W - 100)
+    top:SetPoint("TOP", f.first, "BOTTOM", 0, -12)
 
-    f.membersHeader = Theme.Text(f, 18, "LEFT", true)
-    f.membersHeader:SetPoint("TOPLEFT", 40, ROW_TOP + 26)
-    f.enemiesHeader = Theme.Text(f, 18, "LEFT", true)
-    f.enemiesHeader:SetPoint("TOPLEFT", 354, ROW_TOP + 26)
-    f.memberRows = makeRows(f, 40, 298)
-    f.enemyRows = makeRows(f, 354, 286)
+    -- Two columns: guildies on the left (name, damage, mend), enemies on the right (name and race, skulls).
+    local left, right = 42, 424
+    f.membersHeader = Theme.Heading(f, 18)
+    f.membersHeader:SetPoint("TOPLEFT", left, ROW_TOP + 26)
+    f.enemiesHeader = Theme.Heading(f, 18)
+    f.enemiesHeader:SetPoint("TOPLEFT", right, ROW_TOP + 26)
+    f.memberRows = makeRows(f, left, right - left - 24, true)
+    f.enemyRows = makeRows(f, right, CARD_W - right - 40, false, 44)
 
-    local bottom = Theme.Divider(f, 420)
-    bottom:SetPoint("BOTTOM", 0, 142)
-    f.descLabel = Theme.Text(f, 17, "LEFT", true)
+    local bottom = Theme.Rule(f, CARD_W - 100)
+    bottom:SetPoint("BOTTOM", 0, 156)
+    f.descLabel = Theme.Heading(f, 18)
     f.descLabel:SetPoint("BOTTOMLEFT", 42, 120)
-    f.descLabel:SetText(Theme.BLOOD .. "Account of the battle|r")
+    f.descLabel:SetText("Account of the battle")
 
     local box = CreateFrame("Frame", nil, f)
     box:SetPoint("BOTTOMLEFT", 38, 64)
@@ -190,7 +212,7 @@ local function buildCard()
         Theme.Button(f, "Close", 90, nil, function() f:Hide() end),
     }
     -- Centered row, clear of the bottom border.
-    f.buttons[1]:SetPoint("BOTTOMLEFT", 94, 30)
+    f.buttons[1]:SetPoint("BOTTOMLEFT", (CARD_W - 492) / 2, 30) -- 492 = the four buttons and their gaps
     for i = 2, #f.buttons do f.buttons[i]:SetPoint("LEFT", f.buttons[i - 1], "RIGHT", 8, 0) end
     f.hint = Theme.Text(f, 13, "CENTER")
     f.hint:SetPoint("BOTTOM", 0, 34)
@@ -201,9 +223,9 @@ end
 local function fillCard(e)
     local s = KKC.Stats(e)
     card.engagement = e
-    card.place:SetText(Theme.BLOOD .. KKC.Report.Place(e) .. "|r")
+    card.place:SetText(KKC.Report.Place(e))
     local where = (e.subzone ~= "" and e.subzone ~= e.zone) and (e.zone .. ", ") or ""
-    card.when:SetText(Theme.SOFT .. where .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start) .. "|r")
+    card.when:SetText(Theme.INK .. where .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start) .. "|r")
     local ambushed = KKC.Ambushed(e)
     local opening = ambushed and (Theme.BLOOD .. "Ambushed|r  ~  ") or (ambushed == false and "We struck first  ~  " or "")
     card.size:SetText(("%s%d against %d  ~  %s of battle  ~  %d slain"):format(
@@ -212,25 +234,24 @@ local function fillCard(e)
         e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
 
-    card.membersHeader:SetText(Theme.BLOOD .. ("Warriors of the Kor'kron (%d)"):format(s.members) .. "|r")
+    card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members))
     setRows(card.memberRows, KKC.sortedValues(e.members), function(m)
         local title = KKC.rpTitle(m.name)
         local l = (title and (Theme.SOFT .. title .. "|r ") or "") .. Theme.ClassInk(m.class) .. m.name .. "|r"
             .. (m.died and (" " .. SKULL) or "")
-        local parts = {}
-        if (m.dmg or 0) > 0 then parts[#parts + 1] = KKC.shortNumber(m.dmg) end
-        if (m.heal or 0) > 0 then parts[#parts + 1] = Theme.MEND .. KKC.shortNumber(m.heal) .. " mend|r" end
-        return l, table.concat(parts, "  ")
+        local dmg = (m.dmg or 0) > 0 and KKC.shortNumber(m.dmg) or ""
+        local mend = (m.heal or 0) > 0 and (Theme.MEND .. KKC.shortNumber(m.heal) .. " mend|r") or ""
+        return l, dmg, mend
     end)
 
-    card.enemiesHeader:SetText(Theme.BLOOD .. ("Enemies of the %s (%d)"):format(UnitFactionGroup("player") or "Horde", s.enemies) .. "|r")
+    card.enemiesHeader:SetText(("Enemies of the %s (%d)"):format(UnitFactionGroup("player") or "Horde", s.enemies))
     setRows(card.enemyRows, KKC.sortedValues(e.enemies, function(a, b)
         if (a.kills or 0) ~= (b.kills or 0) then return (a.kills or 0) > (b.kills or 0) end
         return a.name < b.name
     end), function(en)
         local l = Theme.ClassInk(en.class) .. en.name .. "|r" .. (en.race and (Theme.SOFT .. "  " .. en.race .. "|r") or "")
         local r = (en.kills or 0) > 0 and (SKULL .. (en.kills > 1 and (" x" .. en.kills) or "")) or ""
-        return l, r
+        return l, nil, r
     end)
 
     if not card.desc:HasFocus() then card.desc:SetText(e.description or KKC.Report.Description(e)) end

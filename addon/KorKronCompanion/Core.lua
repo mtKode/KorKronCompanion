@@ -151,6 +151,7 @@ end
 KKC.defaults = {
     settings = {
         sync = false,           -- share engagements with guildies over GUILD addon messages (/kkc sync on)
+        paper = "clean",        -- report paper (Theme.PAPERS): clean | torn | war | lore | map
         notify = "quiet",       -- off | quiet (one chat line) | toast | prompt; tracking runs either way
         promptAll = false,      -- true: notify everyone, not just the initiator
         mergeGap = 60,          -- seconds out of combat before an engagement closes
@@ -164,7 +165,7 @@ KKC.defaults = {
 
 -- Stored data format version. Bump it and add a step in migrate() when stored fields change meaning, so long-term
 -- statistics (a 3-month or season summary) can always read old records.
-KKC.SCHEMA = 2
+KKC.SCHEMA = 3
 
 -- How long engagements are kept: your own fights a year (long-term statistics), the guild feed four months.
 local KEEP = { log = { days = 365, max = 3000 }, feed = { days = 120, max = 1500 } }
@@ -185,6 +186,11 @@ local function migrate(db)
     if db.schema < 2 then
         if db.settings.notify == "toast" then db.settings.notify = "quiet" end
         db.schema = 2
+    end
+    -- 3: the clean quest page is the default paper; "torn" was the old default, not a choice.
+    if db.schema < 3 then
+        if db.settings.paper == "torn" then db.settings.paper = "clean" end
+        db.schema = 3
     end
     for _, list in ipairs({ db.log, db.feed }) do
         for _, e in ipairs(list) do

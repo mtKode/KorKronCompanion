@@ -129,6 +129,15 @@ commands.sync = function(arg)
         .. (KKC.settings().sync and " (notable battles are shared with guildies who run the addon)" or " (nothing is sent or read)"))
 end
 
+commands.paper = function(arg)
+    for _, p in ipairs(KKC.Theme.PAPERS) do
+        if p.key == arg then KKC.settings().paper = arg; KKC.Theme.RepaintDocuments() end
+    end
+    local keys = {}
+    for _, p in ipairs(KKC.Theme.PAPERS) do keys[#keys + 1] = p.key end
+    KKC.say("report paper: |cffffd100" .. KKC.Theme.Paper().label .. "|r (" .. table.concat(keys, ", ") .. ")")
+end
+
 commands.ledger = function(arg)
     if arg == "chat" then return KKC.Ledger.Print() end
     KKC.Hub.Show("ledger")

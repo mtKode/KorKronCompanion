@@ -89,11 +89,64 @@ function Theme.Atlas(tex, name, useSize)
     return true
 end
 
-function Theme.Font(fs, size, title)
-    if not fs:SetFont(title and TITLE_FONT or BODY_FONT, size, "") then
+-- flags: "" (plain) or "OUTLINE" (a thin dark edge: makes black text look bold and keeps gold readable on paper).
+function Theme.Font(fs, size, title, flags)
+    if not fs:SetFont(title and TITLE_FONT or BODY_FONT, size, flags or "") then
         fs:SetFontObject(title and "GameFontNormalLarge" or "GameFontHighlight")
     end
     fs:SetShadowOffset(0, 0)
+end
+
+-- A heading on parchment: the title font in the faction's ink (red for the Horde). A bold black outlined version
+-- was tried and read worse in game.
+function Theme.Heading(parent, size, justify)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    Theme.Font(fs, size or 18, true)
+    local r, g, b = Theme.F().ink:match("|cff(%x%x)(%x%x)(%x%x)")
+    fs:SetTextColor(tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255)
+    fs:SetJustifyH(justify or "LEFT")
+    return fs
+end
+
+-- A title on parchment in the game's own yellow, edged dark so it stands out from the paper.
+function Theme.GoldTitle(parent, size, justify)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    Theme.Font(fs, size or 28, true, "OUTLINE")
+    fs:SetTextColor(1, 0.82, 0)
+    fs:SetJustifyH(justify or "CENTER")
+    return fs
+end
+
+-- ------------------------------------------------------------------------------------------------
+-- Report paper: the page behind parchment documents, chosen in Settings (KKC.settings().paper).
+-- Every atlas here is in the Forever client. "faction" papers have their own emblem, so ours is hidden on them.
+-- ------------------------------------------------------------------------------------------------
+
+Theme.PAPERS = {
+    { key = "clean", label = "Clean page", atlas = "QuestBG-Parchment" },
+    { key = "torn", label = "Torn parchment", atlas = "ChromieTime-Parchment" },
+    { key = "war", label = "War page", faction = true },           -- QuestBG-Horde / QuestBG-Alliance
+    { key = "lore", label = "Lore page", atlas = "Campaign-QuestLog-LoreBackground" },
+    { key = "map", label = "Map parchment", atlas = "AdventureMap_TileBg_Parchment" },
+}
+
+function Theme.Paper()
+    local key = KKC.db and KKC.settings().paper
+    for _, p in ipairs(Theme.PAPERS) do if p.key == key then return p end end
+    return Theme.PAPERS[1]
+end
+
+local documents = {} -- every parchment document built so far, to repaint when the paper changes
+
+local function paint(doc)
+    local p = Theme.Paper()
+    local atlas = p.faction and ("QuestBG-" .. (UnitFactionGroup("player") == "Alliance" and "Alliance" or "Horde")) or p.atlas
+    if not Theme.Atlas(doc.paper, atlas) then doc.paper:SetColorTexture(0.84, 0.74, 0.55, 1) end
+    doc.emblem:SetShown(doc.hasEmblem and not p.faction)
+end
+
+function Theme.RepaintDocuments()
+    for _, doc in ipairs(documents) do paint(doc) end
 end
 
 local function classColor(token)
@@ -171,7 +224,6 @@ function Theme.WarFrame(f, title)
     local bg = f:CreateTexture(nil, "BACKGROUND", nil, -7)
     bg:SetPoint("TOPLEFT", 8, -8)
     bg:SetPoint("BOTTOMRIGHT", -8, 8)
-    if not Theme.Atlas(bg, "ChromieTime-Parchment") then bg:SetColorTexture(0.84, 0.74, 0.55, 1) end
 
     -- Darken the page edges a little so it doesn't look flat.
     local shade = f:CreateTexture(nil, "BACKGROUND", nil, -6)
@@ -181,7 +233,12 @@ function Theme.WarFrame(f, title)
     local emblem = f:CreateTexture(nil, "BACKGROUND", nil, -5)
     emblem:SetSize(260, 260)
     emblem:SetPoint("CENTER", 0, -10)
-    if Theme.Atlas(emblem, F.emblem) then emblem:SetAlpha(0.07) else emblem:Hide() end
+    local hasEmblem = Theme.Atlas(emblem, F.emblem)
+    emblem:SetAlpha(0.07)
+
+    local doc = { paper = bg, emblem = emblem, hasEmblem = hasEmblem }
+    documents[#documents + 1] = doc
+    paint(doc)
 
     border(f, F.layout)
     if not title then return nil end
@@ -238,16 +295,41 @@ function Theme.Inset(parent)
     return box
 end
 
--- An ornate line between sections (a plain line without the atlas).
-function Theme.Divider(parent, width)
-    local t = parent:CreateTexture(nil, "ARTWORK")
-    if Theme.Atlas(t, "Campaign-QuestLog-LoreDivider") then
-        t:SetSize(width, 30)
+-- A rule between sections on parchment, like in a book: a thin ink line that fades out towards both ends, with a
+-- small diamond in the middle. Drawn from plain shapes, so it looks the same on every paper. (Blizzard's campaign
+-- lore divider looked smudged and too short on the clean page.) Returns a frame `width` wide and 9 high.
+local RULE_INK = { 0.24, 0.13, 0.06 }
+
+local function fade(tex, fromAlpha, toAlpha)
+    local r, g, b = RULE_INK[1], RULE_INK[2], RULE_INK[3]
+    tex:SetColorTexture(1, 1, 1, 1)
+    if tex.SetGradient and CreateColor then
+        tex:SetGradient("HORIZONTAL", CreateColor(r, g, b, fromAlpha), CreateColor(r, g, b, toAlpha))
+    elseif tex.SetGradientAlpha then
+        tex:SetGradientAlpha("HORIZONTAL", r, g, b, fromAlpha, r, g, b, toAlpha)
     else
-        t:SetSize(width, 1)
-        t:SetColorTexture(0.35, 0.2, 0.08, 0.6)
+        tex:SetColorTexture(r, g, b, (fromAlpha + toAlpha) / 2)
     end
-    return t
+end
+
+function Theme.Rule(parent, width)
+    local rule = CreateFrame("Frame", nil, parent)
+    rule:SetSize(width, 9)
+    local half = width / 2 - 8 -- leave room for the diamond
+    local left = rule:CreateTexture(nil, "ARTWORK")
+    left:SetSize(half, 1)
+    left:SetPoint("LEFT", 0, 0)
+    fade(left, 0, 0.75)
+    local right = rule:CreateTexture(nil, "ARTWORK")
+    right:SetSize(half, 1)
+    right:SetPoint("RIGHT", 0, 0)
+    fade(right, 0.75, 0)
+    local diamond = rule:CreateTexture(nil, "ARTWORK")
+    diamond:SetSize(6, 6)
+    diamond:SetPoint("CENTER")
+    diamond:SetColorTexture(RULE_INK[1], RULE_INK[2], RULE_INK[3], 0.85)
+    if diamond.SetRotation then diamond:SetRotation(math.pi / 4) end
+    return rule
 end
 
 -- Text on parchment: body font, ink color.

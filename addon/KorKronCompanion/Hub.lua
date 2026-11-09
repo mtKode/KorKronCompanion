@@ -338,16 +338,16 @@ local function buildSettings(parent)
         local box = Theme.Inset(p)
         box:SetPoint("TOPLEFT", 0, y)
         box:SetPoint("RIGHT", 0, 0)
-        box:SetHeight(64)
+        box:SetHeight(58)
         box.title = Theme.LightText(box, 15, "LEFT", true)
-        box.title:SetPoint("TOPLEFT", 14, -10)
+        box.title:SetPoint("TOPLEFT", 14, -8)
         box.title:SetText(title)
         box.text = Theme.LightText(box, 12)
         box.text:SetPoint("TOPLEFT", box.title, "BOTTOMLEFT", 0, -4)
         box.text:SetPoint("RIGHT", -190, 0)
         box.button = Theme.HallButton(box, buttonLabel, 160, 26, nil, nil, onClick)
         box.button:SetPoint("RIGHT", -14, 0)
-        y = y - 72
+        y = y - 64 -- six rows still fit when the hall is docked in the Legacy window
         return box
     end
 
@@ -364,6 +364,14 @@ local function buildSettings(parent)
     end)
     p.sync = row("Guild sync", "Change", function()
         KKC.settings().sync = not KKC.settings().sync
+        p:Refresh()
+    end)
+    p.paper = row("Report paper", "Change", function()
+        local set, papers = KKC.settings(), Theme.PAPERS
+        local i = 1
+        for k, paper in ipairs(papers) do if paper.key == set.paper then i = k end end
+        set.paper = papers[i % #papers + 1].key
+        Theme.RepaintDocuments() -- an open battle card changes at once
         p:Refresh()
     end)
     p.test = row("A test battle", "Show test battle", function() SlashCmdList.KORKRONCOMPANION("test") end)
@@ -383,6 +391,9 @@ local function buildSettings(parent)
             or "Off: nothing is sent or read. Battles stay in your own chronicle.") .. "|r")
         self.sync.button:SetLabel(set.sync and "On" or "Off")
         self.sync.button:SetSelected(set.sync)
+        self.paper.text:SetText(Theme.DIM .. "The page the battle card and copy box are written on. Open a card "
+            .. "(Show test battle) and click Change to compare.|r")
+        self.paper.button:SetLabel(Theme.Paper().label)
     end
     return p
 end
