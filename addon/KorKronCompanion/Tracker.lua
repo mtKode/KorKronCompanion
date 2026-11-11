@@ -65,12 +65,25 @@ end
 
 local seen, seenCount = {}, 0
 
+-- GUID -> full name ("First Surname") of players seen on a unit or in the meter. Kill events only give a GUID, and
+-- on Forever the name the client gives for a GUID is the first name alone, so kills are named through this.
+local guidNames, guidCount = {}, 0
+local function noteGUID(guid, name)
+    if not (KKC.readable(guid) and type(guid) == "string" and name) then return end
+    if not guidNames[guid] then
+        if guidCount > 1000 then guidNames, guidCount = {}, 0 end
+        guidCount = guidCount + 1
+    end
+    guidNames[guid] = name
+end
+
 local function remember(unit)
     local isPlayer = KKC.try(UnitIsPlayer, unit)
     local canAttack = KKC.try(UnitCanAttack, "player", unit)
     if not (KKC.readable(isPlayer) and isPlayer and KKC.readable(canAttack) and canAttack) then return end
     local name = KKC.unitName(unit)
     if not name then return end
+    noteGUID(KKC.try(UnitGUID, unit), name)
     local info = seen[name]
     if not info then
         if seenCount > 500 then seen, seenCount = {}, 0 end
@@ -106,6 +119,8 @@ local function newSegment()
     local _, instanceType = IsInInstance()
     return {
         start = KKC.now(), enemies = {}, allies = {}, hk = {}, meterDeaths = {}, pvp = false,
+        pk = {}, myPk = {}, unnamedKills = 0, -- killing blows by name (the group's, yours) and unnamed ones
+        kills = {},                           -- PARTY_KILL as it came: { guid, name, mine }, named after the meter read
         -- World PvP only: battlegrounds, arenas and dungeons are ignored.
         skip = instanceType ~= nil and instanceType ~= "none",
     }
@@ -207,6 +222,7 @@ local function readMeter(s)
         if KKC.readableTable(src) and isPlayerGUID(src.sourceGUID) and KKC.readable(src.name) then
             KKC.raw.meter = src.name
             local name = KKC.short(src.name)
+            noteGUID(src.sourceGUID, name)
             local faction = KKC.readable(src.factionGroup) and src.factionGroup or nil
             if name and name ~= me and faction ~= myFaction and not (s.group and s.group[name]) then
                 local en = enemyOf(s, name)
@@ -307,10 +323,15 @@ local function addToEngagement(s)
         e.enemies[name] = target
         target.class = target.class or en.class
         target.race = target.race or en.race
-        target.kills = target.kills + math.max(s.hk[name] or 0, s.meterDeaths[name] or 0)
+        -- The same death can come from several sources: count it once.
+        target.kills = target.kills + math.max(s.hk[name] or 0, s.pk[name] or 0, s.meterDeaths[name] or 0)
         enrich(target)
     end
-    for name, n in pairs(s.hk) do e.ownKills[name] = (e.ownKills[name] or 0) + n end
+    local own = {}
+    for name, n in pairs(s.hk) do own[name] = n end
+    for name, n in pairs(s.myPk) do own[name] = math.max(own[name] or 0, n) end
+    for name, n in pairs(own) do e.ownKills[name] = (e.ownKills[name] or 0) + n end
+    e.unnamedKills = (e.unnamedKills or 0) + s.unnamedKills
 
     local me = KKC.me()
     local mine = memberOf(e, me)
@@ -326,7 +347,15 @@ local function addToEngagement(s)
             m.dmg = (m.dmg or 0) + (a.dmg or 0)
             m.heal = (m.heal or 0) + (a.heal or 0)
             if a.died then m.died = true end
-        elseif g then
+        end
+    end
+    -- Everyone of the guild in the party or raid fought, near you or not: the meter only sees what happens close to
+    -- you, so a guildie at the far end of the camp would otherwise drop off the report. Others are only counted.
+    for name, g in pairs(s.group or {}) do
+        if g.guild or name == me then
+            local m = memberOf(e, name)
+            m.class = m.class or g.class
+        else
             others = others + 1
         end
     end
@@ -344,6 +373,54 @@ local function addToEngagement(s)
     KKC.Fire("EngagementUpdated", e)
 end
 
+-- The name the client gives for a GUID (on Forever the first name alone), cleaned.
+local function victimName(guid)
+    if not isPlayerGUID(guid) then return nil end
+    if guidNames[guid] then return guidNames[guid] end
+    local name = UnitNameFromGUID and KKC.try(UnitNameFromGUID, guid)
+    if not (KKC.readable(name) and type(name) == "string" and name ~= "" and name ~= UNKNOWNOBJECT) then
+        name = select(6, KKC.try(GetPlayerInfoByGUID, guid))
+    end
+    if KKC.readable(name) and type(name) == "string" and name ~= "" and name ~= UNKNOWNOBJECT then
+        KKC.raw.kill = name
+        return KKC.short(name)
+    end
+end
+
+-- The full name a killing blow's victim goes by in this segment: the GUID seen on a unit or in the meter, else the
+-- one enemy whose name starts with the first name the client gave ("Morgan" -> "Morgan Ashford"), else that name.
+local function fullName(s, guid)
+    local name = guidNames[guid]
+    if name then return name end
+    local first = victimName(guid)
+    if not first then return nil end
+    local match
+    for known in pairs(s.enemies) do
+        if known == first then return known end
+        if known:sub(1, #first + 1) == first .. " " then
+            if match then return first end -- two "Morgan ..." in the fight: can't tell which
+            match = known
+        end
+    end
+    return match or first
+end
+
+local function nameKills(s)
+    for _, k in ipairs(s.kills) do
+        local name = k.guid and fullName(s, k.guid)
+        if name then
+            local en = enemyOf(s, name)
+            local _, class, race = KKC.try(GetPlayerInfoByGUID, k.guid)
+            if KKC.readable(class) and class then en.class = en.class or class end
+            if KKC.readable(race) and race then en.race = en.race or race end -- the display name ("Night Elf")
+            s.pk[name] = (s.pk[name] or 0) + 1
+            if k.mine then s.myPk[name] = (s.myPk[name] or 0) + 1 end
+        else
+            s.unnamedKills = s.unnamedKills + 1
+        end
+    end
+end
+
 local function finishSegment(s)
     if s.finished then return end
     s.finished = true
@@ -351,6 +428,7 @@ local function finishSegment(s)
     if s.skip then return end
     s.group = groupInfo()
     pcall(readMeter, s)
+    pcall(nameKills, s)
     if s.pvp then addToEngagement(s) end
 end
 
@@ -402,6 +480,21 @@ KKC.On("CHAT_MSG_COMBAT_HONOR_GAIN", function(text)
     end
 end)
 
+-- Killing blows by you or your group on enemy players. On this client the honor message is unreliable for
+-- addons (Overlord found the same), so PARTY_KILL (attackerGUID, targetGUID) is the main source of kills. Either GUID
+-- can be secret: a kill whose victim can't be named still counts towards the slain total.
+KKC.On("PARTY_KILL", function(attacker, target)
+    if KKC.readable(target) and not isPlayerGUID(target) then return end -- an NPC
+    local mine = KKC.readable(attacker) and attacker == KKC.try(UnitGUID, "player")
+    local s = activeSegment()
+    local lone = not s
+    if lone then s = newSegment(); s.stop = s.start end -- a kill out of combat: a one-moment segment of its own
+    s.pvp = true
+    -- Named when the segment ends: by then the meter has told us the victim's full name.
+    s.kills[#s.kills + 1] = { guid = KKC.readable(target) and target or nil, mine = mine }
+    if lone then finishSegment(s) end
+end)
+
 KKC.On("PLAYER_DEAD", function()
     local s = activeSegment()
     if s then
@@ -419,6 +512,39 @@ local function engageUnit(unit)
         seg.pvp = true
     end
 end
+
+-- Enemies who attack you without you ever targeting or hitting them (a hunter shooting you as you run) appear in no
+-- other source: while you're in combat, enemy players on nearby nameplates who target you or a groupmate join the
+-- fight. When the client hides who they target, being in combat near you is enough (lax on purpose).
+local function attacksUs(unit)
+    local target = unit .. "target"
+    local isMe = KKC.try(UnitIsUnit, target, "player")
+    if KKC.readable(isMe) then
+        if isMe then return true end
+        local party = KKC.try(UnitInParty, target)
+        local raid = KKC.try(UnitInRaid, target)
+        return (KKC.readable(party) and party) or (KKC.readable(raid) and raid ~= nil and raid ~= false) or false
+    end
+    local fighting = KKC.try(UnitAffectingCombat, unit)
+    return KKC.readable(fighting) and fighting or false
+end
+
+local scanning = false
+local function scanPlates()
+    if not seg then scanning = false; return end
+    for i = 1, 40 do
+        local unit = "nameplate" .. i
+        local exists = KKC.try(UnitExists, unit)
+        if KKC.readable(exists) and exists and attacksUs(unit) then engageUnit(unit) end
+    end
+    C_Timer.After(1, scanPlates)
+end
+
+KKC.On("PLAYER_REGEN_DISABLED", function()
+    if scanning then return end
+    scanning = true
+    C_Timer.After(0.2, scanPlates)
+end)
 
 KKC.On("PLAYER_TARGET_CHANGED", function() engageUnit("target") end)
 KKC.On("PLAYER_FOCUS_CHANGED", function() engageUnit("focus") end)

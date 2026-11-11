@@ -12,6 +12,7 @@
     ownKills [name] = honor kills you got yourself (feeds the ledger)
     reports  [sender] = start time of that guildie's own engagement (picks who was first into battle)
     allies   number of non-guild allies seen in your group
+    unnamedKills  killing blows by the group whose victim couldn't be named (still slain)
     leaders  [name] = "leader" | "assist"   who led your party or raid during the fights (nil when solo or unknown)
 ]]
 
@@ -20,13 +21,21 @@ local Report = {}
 KKC.Report = Report
 
 function KKC.Stats(e)
-    local s = { members = KKC.count(e.members), enemies = KKC.count(e.enemies), kills = 0, fallen = {} }
+    -- kills: named ones per enemy, plus killing blows whose victim the client kept secret.
+    local s = { members = KKC.count(e.members), enemies = KKC.count(e.enemies), kills = e.unnamedKills or 0, fallen = {} }
     for _, en in pairs(e.enemies or {}) do s.kills = s.kills + (en.kills or 0) end
     for _, m in pairs(e.members or {}) do
         if m.died then s.fallen[#s.fallen + 1] = m.name end
     end
     table.sort(s.fallen)
     return s
+end
+
+-- Kills are a minimum: only the killing blows your own client hears about count, and those far from you may not
+-- reach it. "at least 10 slain", or "no kills seen".
+function KKC.SlainText(n)
+    if (n or 0) > 0 then return ("at least %d slain"):format(n) end
+    return "no kills seen"
 end
 
 function KKC.IsNotable(e)
@@ -43,6 +52,28 @@ function KKC.Leaders(e)
     end
     table.sort(leaders); table.sort(assists)
     return leaders, assists
+end
+
+-- The enemy counted by race (or class when the race wasn't seen): { label, count, kills }, most numerous first.
+function KKC.FoeTally(e)
+    local by, list = {}, {}
+    for _, en in pairs(e.enemies or {}) do
+        local label = en.race or KKC.className(en.class) or "unknown"
+        local t = by[label]
+        if not t then
+            t = { label = label, count = 0, kills = 0 }
+            by[label] = t
+            list[#list + 1] = t
+        end
+        t.count = t.count + 1
+        t.kills = t.kills + (en.kills or 0)
+    end
+    table.sort(list, function(a, b)
+        if a.count ~= b.count then return a.count > b.count end
+        if (a.label == "unknown") ~= (b.label == "unknown") then return b.label == "unknown" end
+        return a.label < b.label
+    end)
+    return list
 end
 
 -- Whoever's engagement started first; ties go alphabetically so every client picks the same person.
@@ -80,50 +111,31 @@ function Report.Place(e)
     return e.zone or "?"
 end
 
-local function fallenText(fallen)
-    if #fallen == 0 then return nil end
-    if #fallen == 1 then return fallen[1] end
-    return #fallen .. " Kor'kron"
-end
-
 -- Same engagement, same pick: the wording varies between battles but never changes for one battle.
 local function pick(e, list) return list[(math.floor(e.start or 0) % #list) + 1] end
 
--- The "Brief Description" draft, in the voice of a Kor'kron dispatch. %1 foe, %2 place, %3 slain, %4 fallen.
+-- The "Brief Description" draft, in the voice of a Kor'kron dispatch. %1 foe, %2 place, %3 slain.
+-- Reports leave our own deaths out (they stay in the data and the chronicle's summaries).
 local OPENINGS = {
-    ambush = { "Ambushed by %s at %s.", "%s fell upon us at %s.", "Set upon by %s near %s." },
-    struck = { "We struck %s at %s.", "Fell upon %s at %s.", "Brought the fight to %s at %s." },
-    clash = { "Clashed with %s at %s.", "Met %s in battle at %s." },
+    -- Neutral on purpose: who struck first is still recorded (the chronicle's first-blow count), but it's often a
+    -- guess, and "Ambushed!" on every report read like spam.
+    clash = { "Clashed with %s at %s.", "Met %s in battle at %s.", "Crossed blades with %s at %s." },
 }
 local OUTCOMES = {
-    clean = { " %d slain, no Kor'kron lost.", " %d slain and every Kor'kron still standing.", " %d fell to our blades; we lost none." },
-    bloody = { " %d slain, %d Kor'kron fell.", " %d slain at the cost of %d of ours." },
-    lost = { " %s fell before they could be driven off.", " %s fell; the field was theirs this time." },
+    slain = { " At least %d slain.", " At least %d fell to our blades.", " At least %d of them will not rise again." },
     driven = { " They were driven off.", " They broke and fled." },
 }
 
 local function outcome(e, s)
-    if s.kills > 0 and #s.fallen == 0 then return pick(e, OUTCOMES.clean):format(s.kills) end
-    if s.kills > 0 then return pick(e, OUTCOMES.bloody):format(s.kills, #s.fallen) end
-    if #s.fallen > 0 then return pick(e, OUTCOMES.lost):format(fallenText(s.fallen)) end
+    if s.kills > 0 then return pick(e, OUTCOMES.slain):format(s.kills) end
     return pick(e, OUTCOMES.driven)
 end
 
 local CAMPAIGN = { "A patrol through %s: %s.", "The warband marched on %s: %s.", "We held the field around %s: %s." }
 
-local function times(n)
-    if n == 1 then return "once" elseif n == 2 then return "twice" end
-    return n .. " times"
-end
-
--- "4 clashes with 14 Alliance, ambushed twice and striking first once"
+-- "4 clashes with 14 Alliance"
 local function campaignClashes(e, s, faction)
-    local text = ("%d clashes with %d %s"):format(e.fights, s.enemies, faction)
-    local parts = {}
-    if (e.ambushes or 0) > 0 then parts[#parts + 1] = "ambushed " .. times(e.ambushes) end
-    if (e.struck or 0) > 0 then parts[#parts + 1] = "striking first " .. times(e.struck) end
-    if #parts > 0 then text = text .. ", " .. table.concat(parts, " and ") end
-    return text
+    return ("%d clashes with %d %s"):format(e.fights, s.enemies, faction)
 end
 
 function Report.Description(e)
@@ -132,39 +144,18 @@ function Report.Description(e)
         return pick(e, CAMPAIGN):format(place, campaignClashes(e, s, faction)) .. outcome(e, s)
     end
     local foe = s.enemies == 1 and ("a lone " .. faction) or (s.enemies .. " " .. faction)
-    local ambushed = KKC.Ambushed(e)
-    local kind = ambushed and "ambush" or (ambushed == false and "struck" or "clash")
-    local opening = pick(e, OPENINGS[kind]):format(foe, place)
+    local opening = pick(e, OPENINGS.clash):format(foe, place)
     opening = opening:sub(1, 1):upper() .. opening:sub(2) -- "a lone Alliance fell upon us" starts a sentence
     return opening .. outcome(e, s)
-end
-
-local function enemyLabel(en)
-    local what = table.concat({ en.race or "", KKC.className(en.class) or "" }, " "):gsub("^%s+", ""):gsub("%s+$", "")
-    local label = en.name
-    if what ~= "" then label = label .. " (" .. what .. ")" end
-    if (en.kills or 0) > 1 then label = label .. " x" .. en.kills end
-    return label
-end
-
-local function nameList(list, max)
-    local out = {}
-    for i, v in ipairs(list) do
-        if i > max then out[#out + 1] = ("+%d more"):format(#list - max); break end
-        out[#out + 1] = v
-    end
-    return table.concat(out, ", ")
 end
 
 -- The text people paste into the battle report post.
 function Report.CopyText(e, description)
     local s = KKC.Stats(e)
-    local members, enemies = {}, {}
+    local members, foes = {}, {}
     for _, m in ipairs(KKC.sortedValues(e.members)) do members[#members + 1] = m.name end
-    for _, en in ipairs(KKC.sortedValues(e.enemies, function(a, b)
-        if (a.kills or 0) ~= (b.kills or 0) then return (a.kills or 0) > (b.kills or 0) end
-        return a.name < b.name
-    end)) do enemies[#enemies + 1] = enemyLabel(en) end
+    -- The enemy only as a tally: the report is about who of ours fought.
+    for _, t in ipairs(KKC.FoeTally(e)) do foes[#foes + 1] = t.count .. " " .. t.label end
 
     local location = e.zone or "?"
     if e.subzone and e.subzone ~= "" and e.subzone ~= e.zone then location = location .. " - " .. e.subzone end
@@ -178,24 +169,16 @@ function Report.CopyText(e, description)
         "Location: " .. location,
     }
     if e.campaign then
-        lines[#lines + 1] = ("Clashes: %d (ambushed %d, struck first %d)"):format(e.fights, e.ambushes or 0, e.struck or 0)
+        lines[#lines + 1] = ("Clashes: %d"):format(e.fights)
     end
-    lines[#lines + 1] = ("Kor'kron (%d): %s"):format(s.members, nameList(members, 40))
+    lines[#lines + 1] = ("Kor'kron (%d): %s"):format(s.members, table.concat(members, ", "))
     local leaders, assists = KKC.Leaders(e)
     if #leaders > 0 then lines[#lines + 1] = "Leaders: " .. table.concat(leaders, ", ") end
     if #assists > 0 then lines[#lines + 1] = "Assists: " .. table.concat(assists, ", ") end
     if (e.allies or 0) > 0 then lines[#lines + 1] = ("Other allies: %d"):format(e.allies) end
-    lines[#lines + 1] = ("Enemies (%d): %s"):format(s.enemies, s.enemies > 0 and nameList(enemies, 30) or "unknown")
-    local fallen = {}
-    for _, name in ipairs(s.fallen) do
-        local deaths = e.members[name] and e.members[name].deaths or 1
-        fallen[#fallen + 1] = deaths > 1 and (name .. " x" .. deaths) or name
-    end
-    lines[#lines + 1] = ("Slain: %d | Fallen: %s"):format(s.kills, #fallen > 0 and table.concat(fallen, ", ") or "none")
-    local ambushed -- a campaign's openings are on its Clashes line
-    if not e.campaign then ambushed = KKC.Ambushed(e) end
-    local opener = ambushed and (" | Struck first: " .. KKC.enemyFaction()) or (ambushed == false and " | Struck first: Kor'kron" or "")
-    lines[#lines + 1] = ("Fighting time: %s | First into battle: %s%s"):format(KKC.duration(e.pvpSeconds), KKC.Initiator(e) or "?", opener)
+    lines[#lines + 1] = ("Enemies: %d %s%s"):format(s.enemies, KKC.enemyFaction(), #foes > 0 and (" (" .. table.concat(foes, ", ") .. ")") or "")
+    lines[#lines + 1] = "Slain: " .. (s.kills > 0 and ("at least %d"):format(s.kills) or "none seen")
+    lines[#lines + 1] = ("Fighting time: %s | First into battle: %s"):format(KKC.duration(e.pvpSeconds), KKC.Initiator(e) or "?")
     return table.concat(lines, "\n")
 end
 
@@ -204,16 +187,9 @@ function Report.ShareLine(e)
     local s, place, faction = KKC.Stats(e), Report.Place(e), KKC.enemyFaction()
     local line
     if e.campaign then
-        line = ("[Kor'kron] Campaign through %s - %d clashes, %d against %d %s, %d slain"):format(place, e.fights, s.members, s.enemies, faction, s.kills)
-        line = line .. (#s.fallen > 0 and (", %s fell in glory."):format(fallenText(s.fallen)) or ", none of ours lost.")
-    elseif KKC.Ambushed(e) then
-        local outcome = s.kills > 0 and (", %d slain"):format(s.kills) or ""
-        if #s.fallen > 0 then outcome = outcome .. (", %s fell in glory"):format(fallenText(s.fallen)) end
-        line = ("[Kor'kron] Ambushed at %s - %d %s fell on %d of us%s."):format(place, s.enemies, faction, s.members, outcome)
-    elseif s.kills > 0 and #s.fallen == 0 then
-        line = ("[Kor'kron] %s held - %d against %d %s, %d slain, none of ours fell."):format(place, s.members, s.enemies, faction, s.kills)
+        line = ("[Kor'kron] Campaign through %s - %d clashes, %d against %d %s, %s."):format(place, e.fights, s.members, s.enemies, faction, KKC.SlainText(s.kills))
     elseif s.kills > 0 then
-        line = ("[Kor'kron] Blood at %s - %d against %d %s, %d slain, %s fell in glory."):format(place, s.members, s.enemies, faction, s.kills, fallenText(s.fallen))
+        line = ("[Kor'kron] Blood at %s - %d against %d %s, %s."):format(place, s.members, s.enemies, faction, KKC.SlainText(s.kills))
     else
         line = ("[Kor'kron] Skirmish at %s - %d against %d %s."):format(place, s.members, s.enemies, faction)
     end
@@ -228,8 +204,8 @@ function Report.Headline(e)
     local parts = { ("%s - %d against %d"):format(Report.Place(e), s.members, s.enemies) }
     if e.campaign then
         parts[#parts + 1] = ("%d clashes"):format(e.fights)
-    elseif KKC.Ambushed(e) then parts[#parts + 1] = "ambush" end
-    if s.kills > 0 then parts[#parts + 1] = s.kills .. " slain" end
+    end
+    if s.kills > 0 then parts[#parts + 1] = s.kills .. "+ slain" end
     if #s.fallen > 0 then parts[#parts + 1] = #s.fallen .. " fallen" end
     return table.concat(parts, ", ")
 end

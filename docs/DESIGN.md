@@ -35,7 +35,7 @@ who fought (meter, sightings, sync) and damage/healing totals (meter). The battl
   `mergeGap` passes with no new PvP combat.
 - **Campaign**: one outing, the size the guild reports at (one post per night, "Time: 20:15 - 21:00"). Engagements
   less than `campaignGap` (30 min) apart, in any zone, are one campaign, so a wipe, corpse run and regroup stays in
-  it. Nothing is stored: campaigns are grouped from the log when needed (`Campaign.lua`), and a campaign view looks
+  it. Skirmishes (a stray hit, no kills) never join or bridge a campaign. Nothing is stored: campaigns are grouped from the log when needed (`Campaign.lua`), and a campaign view looks
   like an engagement (summed damage and healing, enemies, kills, deaths, leaders), so the battle card and report texts
   serve both. Its account is kept on its first fight (`campaignDescription`). `/kkc card` opens the latest campaign;
   each fight can still be reported on its own from the Battles list, where fights are listed under their campaign.
@@ -44,19 +44,34 @@ who fought (meter, sightings, sync) and damage/healing totals (meter). The battl
 - **First into battle**: the guildie whose engagement started first (ties: alphabetical). They're named in the
   reports and are the only one prompted by default. This is *not* the guild's event initiator, who gathered the group
   in Discord; the addon can't know that, and the report is posted by hand anyway. (In code: `KKC.Initiator`.)
-- **Members and leaders**: when each segment ends, the group is read once. Guildies who did damage or healing in the
-  meter become members; non-guild group members are only counted. Whoever is party or raid leader (or raid assistant)
-  at that moment is kept in `e.leaders`, and the report gets `Leaders:` / `Assists:` lines for Nazgrel, which asks who
-  led. A quick join-and-leave between fight ends is missed on purpose: only people actually contributing count.
+- **Members and leaders**: when each segment ends, the group is read once. Every guildie in the party or raid is a
+  member, near you or not: the meter and kill events only see what happens close to you, and a guildie at the far end
+  of the camp must still be on the report. Their damage and healing show when the meter caught them. Non-guild group
+  members are only counted. Whoever is party or raid leader (or raid assistant) is kept in `e.leaders`, and the report
+  gets `Leaders:` / `Assists:` lines for Nazgrel, which asks who led.
+- **Attackers you never target**: while in combat, enemy players on nearby nameplates who target you or a groupmate
+  join the fight (when the client hides their target, being in combat near you is enough). Otherwise a hunter shooting
+  you as you run would be in no source at all.
+- **Kills are a minimum**: only killing blows your own client hears about count, so reports say "at least 10 slain"
+  (`KKC.SlainText`). Guild sync would merge every guildie's view for exact numbers.
 - **Ambush / struck first**: an auto attack, auto shot or spell cast while targeting an enemy player within 5 s before
   entering combat means *you* struck first. The fight counts as an ambush when the guildie first into battle didn't
-  strike first. That changes the wording ("Ambushed by 5 Alliance at Tarren Mill…") and is counted in war reports.
+  strike first. It's only counted (the chronicle's first-blow tile, two Ledger tracks): reports, the card and toasts
+  stay neutral ("Clashed with 5 Alliance at Tarren Mill"), since it's often a guess and "Ambushed!" everywhere read
+  like spam in testing.
+- **Kills**: the first live test logged 22 battles and 0 kills from honor messages alone, which this client doesn't
+  give addons reliably. `PARTY_KILL` (attackerGUID, targetGUID: killing blows by anyone in your group) is now the main
+  source, as in Overlord. Per enemy the highest of killing blows, honor kills and meter deaths counts, so one death is
+  never counted twice; a victim the client keeps secret still counts as slain (`unnamedKills`). Your own blows feed the
+  War Ledger.
+- **Card emphasis**: the card is the officers' proof of who of ours fought. Up to 13 warriors get one wide column
+  (with TRP3 titles); more get two columns (26 names). Enemies are only tallied by race, in the card and the text.
 
 ## Data flow
 
 ```
 in combat:   target/mouseover/nameplate sightings  ─┐
-             honor-kill messages                    ├─► current segment
+             killing blows (PARTY_KILL), honor kills ├─► current segment
 out of combat (+1 s):  damage meter "Current" read ─┘
                                  │
                           engagement (merge segments, 60 s gap)
@@ -233,9 +248,8 @@ known only by name when nobody targeted them.
 See the README. `/kkc` opens the hall; `/kkc debug` gives the API and restriction report.
 
 ## Later
-1. **Killing blows**: `PARTY_KILL` (attacker and target GUID for kills by your group), as Overlord Forever uses it.
-2. **A real Legacy category**: Blizzard's Legacy list is built from achievement categories and every row expects a real
+1. **A real Legacy category**: Blizzard's Legacy list is built from achievement categories and every row expects a real
    achievement; inserting ours into it would risk tainting. The side tab avoids that. Revisit only if it's wanted.
-3. Patrol mode (one recap per outing), call to arms button, nemesis / kill-on-sight list.
+2. Call to arms button, nemesis / kill-on-sight list.
 3. Killer from death recap (`C_DeathRecap`) for "who killed me".
 4. Optional companion Discord bot that reads shared lines from the bridge channel.

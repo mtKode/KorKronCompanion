@@ -166,7 +166,7 @@ KKC.defaults = {
 
 -- Stored data format version. Bump it and add a step in migrate() when stored fields change meaning, so long-term
 -- statistics (a 3-month or season summary) can always read old records.
-KKC.SCHEMA = 3
+KKC.SCHEMA = 4
 
 -- How long engagements are kept: your own fights a year (long-term statistics), the guild feed four months.
 local KEEP = { log = { days = 365, max = 3000 }, feed = { days = 120, max = 1500 } }
@@ -192,6 +192,44 @@ local function migrate(db)
     if db.schema < 3 then
         if db.settings.paper == "torn" then db.settings.paper = "clean" end
         db.schema = 3
+    end
+    -- 4: the first kill tracking (9 Nov) named victims by first name only and stored race tokens. Fold each such kill
+    -- into the one full-name enemy it belongs to ("Morgan" -> "Morgan Ashford"), and use display race names.
+    if db.schema < 4 then
+        local RACES = { NightElf = "Night Elf", Scourge = "Undead" }
+        for _, list in ipairs({ db.log, db.feed }) do
+            for _, e in ipairs(list) do
+                local enemies = e.enemies or {}
+                for name, en in pairs(enemies) do
+                    if RACES[en.race] then en.race = RACES[en.race] end
+                    if not name:find(" ", 1, true) and (en.kills or 0) > 0 then
+                        local match, count = nil, 0
+                        for other in pairs(enemies) do
+                            if other:sub(1, #name + 1) == name .. " " then match, count = other, count + 1 end
+                        end
+                        if count == 1 then
+                            local full = enemies[match]
+                            full.kills = (full.kills or 0) + en.kills
+                            full.class, full.race = full.class or en.class, full.race or RACES[en.race] or en.race
+                            if e.ownKills and e.ownKills[name] then
+                                e.ownKills[match] = (e.ownKills[match] or 0) + e.ownKills[name]
+                                e.ownKills[name] = nil
+                            end
+                            enemies[name] = nil -- removing the current key during pairs() is allowed in Lua
+                        end
+                    end
+                end
+            end
+        end
+        for _, l in pairs(db.ledger or {}) do
+            for token, label in pairs(RACES) do
+                if l.race and l.race[token] then
+                    l.race[label] = (l.race[label] or 0) + l.race[token]
+                    l.race[token] = nil
+                end
+            end
+        end
+        db.schema = 4
     end
     for _, list in ipairs({ db.log, db.feed }) do
         for _, e in ipairs(list) do

@@ -74,8 +74,8 @@ local function debug()
     local first, second = UnitName("player")
     KKC.say(("  names: UnitName = [%s] [%s], full = [%s], regional unique: %s"):format(tostring(first), tostring(second),
         tostring(KKC.me()), yesNo(RegionalUniqueNamesEnabled and KKC.try(RegionalUniqueNamesEnabled))))
-    KKC.say(("  raw names seen: honor [%s], meter [%s], addon sender [%s]"):format(
-        tostring(KKC.raw.honor or "-"), tostring(KKC.raw.meter or "-"), tostring(KKC.raw.sender or "-")))
+    KKC.say(("  raw names seen: honor [%s], kill [%s], meter [%s], addon sender [%s]"):format(
+        tostring(KKC.raw.honor or "-"), tostring(KKC.raw.kill or "-"), tostring(KKC.raw.meter or "-"), tostring(KKC.raw.sender or "-")))
 
     local open = KKC.Tracker.Open()
     KKC.say(("  open engagement: %s, logged: %d, guild feed: %d"):format(open and KKC.Report.Headline(open) or "none", #KKC.db.log, #KKC.db.feed))

@@ -23,7 +23,12 @@ function Campaign.Group(list)
     local out, current = {}, nil
     local gap = Campaign.Gap()
     for _, e in ipairs(list or {}) do
-        if not e.test then
+        if e.test then -- never part of anything
+        elseif e.minor then
+            -- A skirmish (a stray hit, no kills) stands alone: it never joins a campaign or bridges two fights into
+            -- one, so a brush with a passer-by can't turn a single battle into a "campaign".
+            out[#out + 1] = { fights = { e }, start = e.start, stop = e.stop or e.start }
+        else
             -- The list is newest first: e is older than everything in current.
             if current and current.start - (e.stop or e.start) <= gap then
                 current.fights[#current.fights + 1] = e
@@ -58,6 +63,7 @@ function Campaign.View(c)
     for i = #c.fights, 1, -1 do -- oldest first, so places come in the order they were fought over
         local e = c.fights[i]
         v.pvpSeconds = v.pvpSeconds + (e.pvpSeconds or 0)
+        v.unnamedKills = (v.unnamedKills or 0) + (e.unnamedKills or 0)
         v.allies = math.max(v.allies, e.allies or 0)
         local ambushed = KKC.Ambushed(e)
         if ambushed then v.ambushes = v.ambushes + 1 elseif ambushed == false then v.struck = v.struck + 1 end
@@ -71,7 +77,7 @@ function Campaign.View(c)
             seenPlace[zone].seen[sub] = true
             table.insert(seenPlace[zone].subs, sub)
         end
-        local short = KKC.Report.Place(e)
+        local short = e.zone or "?" -- the title names whole zones; the subzones are in the report's Location line
         if not seenZone[short] then seenZone[short] = true; v.zones[#v.zones + 1] = short end
         for name, m in pairs(e.members or {}) do
             local t = v.members[name] or { name = name }

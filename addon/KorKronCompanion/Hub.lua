@@ -41,14 +41,59 @@ local function headline(e)
             .. date("%H:%M", e.stop) .. "|r"
     end
     local tags = {}
-    local ambushed = KKC.Ambushed(e)
-    if ambushed then tags[#tags + 1] = "|cffff6050ambush|r" elseif ambushed == false then tags[#tags + 1] = "struck first" end
     if e.minor then tags[#tags + 1] = Theme.DIM .. "skirmish|r" end
     if e.feed then tags[#tags + 1] = Theme.DIM .. "by " .. (KKC.Initiator(e) or "?") .. "|r" end
     return KKC.Report.Headline(e) .. (#tags > 0 and ("  " .. Theme.DIM .. "~|r " .. table.concat(tags, ", ")) or "")
 end
 
--- A clickable battle row: "Wed 21:14   Tarren Mill - 4 against 6, 5 slain  ~ ambush". Click: the battle card.
+-- How many rows of `step` pixels fit in `frame` between `top` and `bottom` pixels of margin. Fonts and the docked
+-- Legacy window change the space, so lists are fitted to it instead of assuming a size. `fallback` before layout.
+local function fit(frame, top, bottom, step, fallback, max)
+    local h = KKC.try(frame.GetHeight, frame)
+    if type(h) ~= "number" or h <= 0 then return fallback end
+    return math.max(1, math.min(max, math.floor((h - top - bottom) / step)))
+end
+
+-- The mouse wheel moves a list three rows at a time (p.offset), and a resize refits it.
+local function scrollable(frame, p)
+    frame:EnableMouseWheel(true)
+    frame:SetScript("OnMouseWheel", function(_, delta) p.offset = (p.offset or 0) - delta * 3; p:Refresh() end)
+    p:SetScript("OnSizeChanged", function(self) if self:IsShown() then self:Refresh() end end)
+end
+
+-- Clamp p.offset to a list of `total` items showing `visible` at a time; returns the offset.
+local function clamp(p, total, visible)
+    p.offset = math.max(0, math.min(p.offset or 0, total - visible))
+    return p.offset
+end
+
+-- Text that scrolls (wheel or the bar) when it is longer than its box.
+local function scrollText(parent, size)
+    local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    local child = CreateFrame("Frame", nil, scroll)
+    child:SetSize(400, 10)
+    scroll:SetScrollChild(child)
+    local fs = Theme.LightText(child, size)
+    fs:SetPoint("TOPLEFT", 0, 0)
+    fs:SetJustifyV("TOP")
+    fs:SetSpacing(4)
+    local function relayout()
+        local w = KKC.try(scroll.GetWidth, scroll)
+        if type(w) == "number" and w > 0 then child:SetWidth(w); fs:SetWidth(w) end
+        local h = KKC.try(fs.GetStringHeight, fs)
+        child:SetHeight((type(h) == "number" and h or 0) + 8)
+    end
+    scroll:SetScript("OnSizeChanged", relayout)
+    function scroll:SetBody(text)
+        fs:SetText(text)
+        relayout()
+        KKC.try(self.SetVerticalScroll, self, 0)
+    end
+    scroll.text = fs
+    return scroll
+end
+
+-- A clickable battle row: "Wed 21:14   Tarren Mill - 4 against 6, 5 slain". Click: the battle card.
 local function battleRow(parent, width)
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(width, 20)
@@ -58,9 +103,10 @@ local function battleRow(parent, width)
     hl:SetColorTexture(F.accent[1], F.accent[2], F.accent[3], 0.22)
     b.when = Theme.LightText(b, 12)
     b.when:SetPoint("LEFT", 4, 0)
-    b.when:SetWidth(96)
+    b.when:SetWidth(124)
+    b.when:SetWordWrap(false)
     b.what = Theme.LightText(b, 12)
-    b.what:SetPoint("LEFT", 104, 0)
+    b.what:SetPoint("LEFT", 132, 0)
     b.what:SetPoint("RIGHT", -4, 0)
     b.what:SetWordWrap(false)
     b:SetScript("OnClick", function(self) if self.engagement then KKC.UI.ShowCard(self.engagement) end end)
@@ -85,7 +131,6 @@ local TILES = {
     { key = "fallen", label = "Kor'kron fallen" },
     { key = "blow", label = "First blow (ours / theirs)" },
 }
-local CHRONICLE_ROWS = 4
 
 local function buildChronicle(parent, guild)
     local p = CreateFrame("Frame", nil, parent)
@@ -121,24 +166,14 @@ local function buildChronicle(parent, guild)
         p.tiles[t.key] = box
     end
 
+    -- The details take all the room down to the buttons and scroll when a long week doesn't fit. (Its battles are
+    -- under Battles: a list here too didn't fit.)
     local details = Theme.Inset(p)
     details:SetPoint("TOPLEFT", 0, -152)
-    details:SetPoint("TOPRIGHT", 0, -152)
-    details:SetHeight(180)
-    p.body = Theme.LightText(details, 12)
+    details:SetPoint("BOTTOMRIGHT", 0, 34)
+    p.body = scrollText(details, 12)
     p.body:SetPoint("TOPLEFT", 12, -10)
-    p.body:SetPoint("RIGHT", -12, 0)
-    p.body:SetSpacing(4)
-    p.body:SetJustifyV("TOP")
-
-    p.listHeader = Theme.LightText(p, 15, "LEFT", true)
-    p.listHeader:SetPoint("TOPLEFT", 2, -342)
-    p.rows = {}
-    for i = 1, CHRONICLE_ROWS do
-        local r = battleRow(p, 630)
-        r:SetPoint("TOPLEFT", 0, -362 - (i - 1) * 21)
-        p.rows[i] = r
-    end
+    p.body:SetPoint("BOTTOMRIGHT", -30, 8)
 
     p.copy = Theme.HallButton(p, "Scribe chronicle", 150, 26, "Interface\\Icons\\INV_Scroll_03",
         "Copy this chronicle as text, to paste in Discord or keep.", function()
@@ -167,19 +202,13 @@ local function buildChronicle(parent, guild)
             body = Theme.DIM .. "Guild sync is off, so no word comes from the field. Turn it on under Settings to hear "
                 .. "of battles guildies with the addon fight without you.|r"
         end
-        self.body:SetText(body)
+        self.body:SetBody(body)
         self.tiles.battles.value:SetText(data.engagements)
         self.tiles.kills.value:SetText(data.kills)
         self.tiles.fallen.value:SetText(data.fallen)
         self.tiles.blow.value:SetText(("%d / %d"):format(data.struck, data.ambushed))
         if self.share then self.share:SetEnabled(data.engagements > 0) end
 
-        local rows = {}
-        for _, e in ipairs(data.list) do if not e.minor then rows[#rows + 1] = e end end
-        for _, e in ipairs(data.list) do if e.minor and #rows < CHRONICLE_ROWS then rows[#rows + 1] = e end end
-        local more = #rows > CHRONICLE_ROWS and (Theme.DIM .. ("  (%d more under Battles)"):format(#rows - CHRONICLE_ROWS) .. "|r") or ""
-        self.listHeader:SetText(#rows > 0 and ("Battles" .. more) or "")
-        for i, r in ipairs(self.rows) do r:Set(rows[i]) end
     end
     return p
 end
@@ -188,22 +217,34 @@ end
 -- Battles: the whole log, paged
 -- ------------------------------------------------------------------------------------------------
 
-local BATTLE_ROWS = 19
+local BATTLE_ROWS = 30 -- built; as many as fit are shown
 
 local function buildBattles(parent)
     local p = CreateFrame("Frame", nil, parent)
     p:SetAllPoints()
     p:Hide()
-    p.page, p.showMinor = 1, false
+    p.offset, p.showMinor = 0, false
+
+    -- The same periods as the Chronicle (and the same choice: switching sections keeps it).
+    p.periods = {}
+    for i, per in ipairs(KKC.Summary.PERIODS) do
+        local b = Theme.HallButton(p, per.label, 100, 24, nil, nil, function()
+            current.period = per.key
+            p.offset = 0
+            Hub.Refresh()
+        end)
+        b.key = per.key
+        b:SetPoint("TOPLEFT", (i - 1) * 105, 0)
+        p.periods[i] = b
+    end
 
     p.heading = Theme.LightText(p, 19, "LEFT", true)
-    p.heading:SetPoint("TOPLEFT", 2, -2)
-    p.heading:SetText("Battles")
+    p.heading:SetPoint("TOPLEFT", 2, -36)
     p.sub = Theme.LightText(p, 11)
     p.sub:SetPoint("TOPLEFT", p.heading, "BOTTOMLEFT", 0, -2)
 
     local box = Theme.Inset(p)
-    box:SetPoint("TOPLEFT", 0, -44)
+    box:SetPoint("TOPLEFT", 0, -78)
     box:SetPoint("BOTTOMRIGHT", 0, 34)
     p.rows = {}
     for i = 1, BATTLE_ROWS do
@@ -212,27 +253,34 @@ local function buildBattles(parent)
         p.rows[i] = r
     end
 
-    p.newer = Theme.HallButton(p, "< Newer", 100, 26, nil, nil, function() p.page = p.page - 1; p:Refresh() end)
+    scrollable(box, p)
+    p.box = box
+    p.newer = Theme.HallButton(p, "< Newer", 100, 26, nil, nil, function() p.offset = p.offset - (p.visible or 10); p:Refresh() end)
     p.newer:SetPoint("BOTTOMLEFT", 0, 0)
-    p.older = Theme.HallButton(p, "Older >", 100, 26, nil, nil, function() p.page = p.page + 1; p:Refresh() end)
+    p.older = Theme.HallButton(p, "Older >", 100, 26, nil, nil, function() p.offset = p.offset + (p.visible or 10); p:Refresh() end)
     p.older:SetPoint("LEFT", p.newer, "RIGHT", 8, 0)
     p.pageText = Theme.LightText(p, 12)
     p.pageText:SetPoint("LEFT", p.older, "RIGHT", 12, 0)
     p.minor = Theme.HallButton(p, "Show skirmishes", 150, 26, nil,
         "Also list the passing skirmishes (a stray hit, no kills): they are kept but never announced.", function()
             p.showMinor = not p.showMinor
-            p.page = 1
+            p.offset = 0
             p:Refresh()
         end)
     p.minor:SetPoint("BOTTOMRIGHT", 0, 0)
 
     function p:Refresh()
-        -- A campaign (two or more fights in one outing) gets its own row, its fights listed under it.
+        for _, b in ipairs(self.periods) do b:SetSelected(b.key == current.period) end
+        local from, to, label = KKC.Summary.Range(current.period)
+        if self.period ~= current.period then self.period, self.offset = current.period, 0 end
+        self.heading:SetText("Battles - " .. label)
+        -- A campaign (two or more fights in one outing) gets its own row, its fights listed under it. Campaigns are
+        -- grouped over the whole log, so one that crosses midnight or the weekly reset isn't cut in two.
         local list, battles = {}, 0
         for _, c in ipairs(KKC.Campaign.Group(KKC.db.log)) do
             local fights = {}
             for _, e in ipairs(c.fights) do
-                if self.showMinor or not e.minor then fights[#fights + 1] = e end
+                if (self.showMinor or not e.minor) and e.start >= from and e.start < to then fights[#fights + 1] = e end
             end
             battles = battles + #fights
             if #c.fights > 1 and #fights > 0 then
@@ -242,18 +290,20 @@ local function buildBattles(parent)
                 list[#list + 1] = { e = fights[1] }
             end
         end
-        local pages = math.max(1, math.ceil(#list / BATTLE_ROWS))
-        self.page = math.max(1, math.min(self.page, pages))
+        local visible = fit(self.box, 8, 8, 21, 18, BATTLE_ROWS)
+        self.visible = visible
+        local offset = clamp(self, #list, visible)
         for i, r in ipairs(self.rows) do
-            local item = list[(self.page - 1) * BATTLE_ROWS + i]
+            local item = i <= visible and list[offset + i]
             r:Set(item and item.e, item and item.inCampaign)
         end
-        self.newer:SetEnabled(self.page > 1)
-        self.older:SetEnabled(self.page < pages)
-        self.pageText:SetText(Theme.DIM .. ("Page %d of %d"):format(self.page, pages) .. "|r")
+        self.newer:SetEnabled(offset > 0)
+        self.older:SetEnabled(offset + visible < #list)
+        self.pageText:SetText(Theme.DIM .. (#list > 0 and ("%d-%d of %d  (mouse wheel scrolls)"):format(offset + 1,
+            math.min(#list, offset + visible), #list) or "") .. "|r")
         self.minor:SetSelected(self.showMinor)
-        self.sub:SetText(Theme.DIM .. (#list > 0 and ("%d battles recorded. Click one to read its report, or a campaign for the whole outing."):format(battles)
-            or "No battles recorded yet. The blades stay sheathed... for now.") .. "|r")
+        self.sub:SetText(Theme.DIM .. (#list > 0 and ("%d battles. Click one to read its report, or a campaign for the whole outing."):format(battles)
+            or "No battles in this time. The blades stay sheathed... for now.") .. "|r")
     end
     return p
 end
@@ -262,13 +312,14 @@ end
 -- War Ledger: tiered challenges, Legacy style
 -- ------------------------------------------------------------------------------------------------
 
-local LEDGER_ROWS = 6
+local LEDGER_ROWS = 10 -- built; as many as fit are shown
 
 local function buildLedger(parent)
     local p = CreateFrame("Frame", nil, parent)
     p:SetAllPoints()
     p:Hide()
-    p.page = 1
+    p.offset = 0
+    scrollable(p, p)
 
     p.heading = Theme.LightText(p, 19, "LEFT", true)
     p.heading:SetPoint("TOPLEFT", 2, -2)
@@ -297,9 +348,9 @@ local function buildLedger(parent)
         p.rows[i] = row
     end
 
-    p.prev = Theme.HallButton(p, "< Previous", 110, 26, nil, nil, function() p.page = p.page - 1; p:Refresh() end)
+    p.prev = Theme.HallButton(p, "< Previous", 110, 26, nil, nil, function() p.offset = p.offset - (p.visible or 6); p:Refresh() end)
     p.prev:SetPoint("BOTTOMLEFT", 0, 0)
-    p.next = Theme.HallButton(p, "Next >", 110, 26, nil, nil, function() p.page = p.page + 1; p:Refresh() end)
+    p.next = Theme.HallButton(p, "Next >", 110, 26, nil, nil, function() p.offset = p.offset + (p.visible or 6); p:Refresh() end)
     p.next:SetPoint("LEFT", p.prev, "RIGHT", 8, 0)
     p.pageText = Theme.LightText(p, 12)
     p.pageText:SetPoint("LEFT", p.next, "RIGHT", 12, 0)
@@ -307,12 +358,13 @@ local function buildLedger(parent)
     function p:Refresh()
         local tracks = KKC.Ledger.Tracks()
         local l = KKC.Ledger.Mine()
-        self.sub:SetText(Theme.DIM .. ("%s: %d slain, %d unique foes, fallen %d times. Only honor kills you earned yourself count.")
+        self.sub:SetText(Theme.DIM .. ("%s: %d slain, %d unique foes, fallen %d times. Only your own killing blows count.")
             :format(KKC.me() or "?", l.total, KKC.count(l.enemy), l.fallen) .. "|r")
-        local pages = math.max(1, math.ceil(#tracks / LEDGER_ROWS))
-        self.page = math.max(1, math.min(self.page, pages))
+        local visible = fit(self, 44, 34, 64, 6, LEDGER_ROWS)
+        self.visible = visible
+        local offset = clamp(self, #tracks, visible)
         for i, row in ipairs(self.rows) do
-            local t = tracks[(self.page - 1) * LEDGER_ROWS + i]
+            local t = i <= visible and tracks[offset + i]
             if t then
                 row.icon:SetTexture(t.icon)
                 row.icon:SetDesaturated(t.tier == 0)
@@ -325,9 +377,9 @@ local function buildLedger(parent)
                 row:Hide()
             end
         end
-        self.prev:SetEnabled(self.page > 1)
-        self.next:SetEnabled(self.page < pages)
-        self.pageText:SetText(Theme.DIM .. ("Page %d of %d"):format(self.page, pages) .. "|r")
+        self.prev:SetEnabled(offset > 0)
+        self.next:SetEnabled(offset + visible < #tracks)
+        self.pageText:SetText(Theme.DIM .. ("%d-%d of %d challenges"):format(offset + 1, math.min(#tracks, offset + visible), #tracks) .. "|r")
     end
     return p
 end
@@ -394,7 +446,7 @@ local function buildSettings(parent)
         p:Refresh()
     end)
     p.test = row("A test battle", "Show test battle", function() SlashCmdList.KORKRONCOMPANION("test") end)
-    p.test.text:SetText(Theme.DIM .. "A made-up ambush at Tarren Mill, to see the note and the battle card without a fight.|r")
+    p.test.text:SetText(Theme.DIM .. "A made-up battle at Tarren Mill, to see the note and the battle card without a fight.|r")
     p.debug = row("Diagnostics", "Print to chat", function() SlashCmdList.KORKRONCOMPANION("debug") end)
     p.debug.text:SetText(Theme.DIM .. "What this game client allows the addon (meter, names, sync). Send it along if something looks wrong.|r")
 

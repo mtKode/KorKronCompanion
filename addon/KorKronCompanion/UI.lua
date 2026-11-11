@@ -133,10 +133,11 @@ local function setRow(row, name, first, last)
 end
 
 local function setRows(rows, list, fill)
+    local max = #rows
     for i, row in ipairs(rows) do
         local item = list[i]
-        if i == ROWS and #list > ROWS then
-            setRow(row, Theme.SOFT .. ("and %d more"):format(#list - ROWS + 1) .. "|r")
+        if i == max and #list > max then
+            setRow(row, Theme.SOFT .. ("and %d more"):format(#list - max + 1) .. "|r")
         elseif item then
             setRow(row, fill(item))
         else
@@ -165,14 +166,34 @@ local function buildCard()
     local top = Theme.Rule(f, CARD_W - 100)
     top:SetPoint("TOP", f.first, "BOTTOM", 0, -12)
 
-    -- Two columns: guildies on the left (name, damage, mend), enemies on the right (name and race, skulls).
-    local left, right = 42, 424
+    -- The Kor'kron are what the card is for (the officers' proof of who fought); the enemy is only tallied by race.
+    -- Up to 13 warriors: one wide column (with TRP3 titles) and the foes' tally on the right. More: two columns of
+    -- warriors across the whole card (26 names, no titles so the names fit) and the tally as one line below them.
+    local left, right = 42, 548
     f.membersHeader = Theme.Heading(f, 18)
     f.membersHeader:SetPoint("TOPLEFT", left, ROW_TOP + 26)
     f.enemiesHeader = Theme.Heading(f, 18)
     f.enemiesHeader:SetPoint("TOPLEFT", right, ROW_TOP + 26)
-    f.memberRows = makeRows(f, left, right - left - 24, true)
-    f.enemyRows = makeRows(f, right, CARD_W - right - 40, false, 44)
+    f.wideRows = makeRows(f, left, right - left - 30, true)
+    f.colRows = makeRows(f, left, 336, true)
+    for _, row in ipairs(makeRows(f, left + 364, 336, true)) do f.colRows[#f.colRows + 1] = row end
+    -- 27 to 39 warriors: three columns of names only, so a big raid still fits one picture.
+    f.triRows = {}
+    for c = 0, 2 do
+        for _, row in ipairs(makeRows(f, left + c * 236, 224, false, 54)) do f.triRows[#f.triRows + 1] = row end
+    end
+    -- Even more: the mouse wheel scrolls the names (a picture per screenful).
+    f:EnableMouseWheel(true)
+    f:SetScript("OnMouseWheel", function(self, delta)
+        if not self.engagement then return end
+        self.memberOffset = (self.memberOffset or 0) - delta * 3
+        UI.ShowCard(self.engagement, true)
+    end)
+    f.foeRows = makeRows(f, right, CARD_W - right - 40, false, 64)
+    f.foeLine = Theme.Text(f, 14, "CENTER")
+    f.foeLine:SetPoint("BOTTOM", 0, 166)
+    f.foeLine:SetWidth(CARD_W - 80)
+    f.foeLine:SetWordWrap(false)
 
     local bottom = Theme.Rule(f, CARD_W - 100)
     bottom:SetPoint("BOTTOM", 0, 156)
@@ -234,49 +255,68 @@ local function fillCard(e)
     local leaders = KKC.Leaders(e)
     local led = #leaders > 0 and ("  ~  Led by " .. table.concat(leaders, ", ")) or ""
     if e.campaign then
-        card.size:SetText(("%d clashes  ~  %d against %d  ~  %s of battle  ~  %d slain"):format(
-            e.fights, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills))
-        local openings = {}
-        if e.ambushes > 0 then openings[#openings + 1] = Theme.BLOOD .. "Ambushed " .. e.ambushes .. "|r" end
-        if e.struck > 0 then openings[#openings + 1] = "Struck first " .. e.struck end
-        openings[#openings + 1] = "First into battle: " .. (KKC.Initiator(e) or "?")
-        card.first:SetText(table.concat(openings, "  ~  ") .. led)
+        card.size:SetText(("%d clashes  ~  %d against %d  ~  %s of battle  ~  %s"):format(
+            e.fights, s.members, s.enemies, KKC.duration(e.pvpSeconds), KKC.SlainText(s.kills)))
+        card.first:SetText("First into battle: " .. (KKC.Initiator(e) or "?") .. led)
     else
-        local ambushed = KKC.Ambushed(e)
-        local opening = ambushed and (Theme.BLOOD .. "Ambushed|r  ~  ") or (ambushed == false and "We struck first  ~  " or "")
-        card.size:SetText(("%s%d against %d  ~  %s of battle  ~  %d slain"):format(
-            opening, s.members, s.enemies, KKC.duration(e.pvpSeconds), s.kills))
+        card.size:SetText(("%d against %d  ~  %s of battle  ~  %s"):format(
+            s.members, s.enemies, KKC.duration(e.pvpSeconds), KKC.SlainText(s.kills)))
         card.first:SetText(("First into battle: %s%s%s"):format(KKC.Initiator(e) or "?", led,
             e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
     end
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
 
-    card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members))
-    setRows(card.memberRows, KKC.sortedValues(e.members), function(m)
-        local title = KKC.rpTitle(m.name)
+    -- As many warriors as possible in one picture: 13 in one wide column (with TRP3 titles), 26 in two columns,
+    -- 39 in three (names only). Past that the mouse wheel scrolls them.
+    local members = KKC.sortedValues(e.members)
+    local many = s.members > ROWS
+    local layouts = { card.wideRows, card.colRows, card.triRows }
+    local use = s.members <= ROWS and 1 or (s.members <= 2 * ROWS and 2 or 3)
+    for i, rows in ipairs(layouts) do if i ~= use then setRows(rows, {}, nil) end end
+    local rows = layouts[use]
+    local offset = math.max(0, math.min(card.memberOffset or 0, #members - #rows))
+    card.memberOffset = offset
+    local shown = {}
+    for i = offset + 1, #members do shown[#shown + 1] = members[i] end
+    local scrolls = #members > #rows
+    card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members)
+        .. (scrolls and (Theme.SOFT .. ("   %d-%d, scroll for more"):format(offset + 1, offset + #rows - (#shown > #rows and 1 or 0)) .. "|r") or ""))
+    setRows(rows, shown, function(m)
+        local title = not many and KKC.rpTitle(m.name)
         local l = (title and (Theme.SOFT .. title .. "|r ") or "") .. Theme.ClassInk(m.class) .. m.name .. "|r"
-            .. (m.died and (" " .. SKULL .. ((m.deaths or 1) > 1 and (Theme.SOFT .. "x" .. m.deaths .. "|r") or "")) or "")
+        -- Our deaths aren't shown on the card (they stay in the data for the summaries); the skull is for foes slain.
+        if use == 3 then return l end
         local dmg = (m.dmg or 0) > 0 and KKC.shortNumber(m.dmg) or ""
         local mend = (m.heal or 0) > 0 and (Theme.MEND .. KKC.shortNumber(m.heal) .. " mend|r") or ""
         return l, dmg, mend
     end)
 
-    card.enemiesHeader:SetText(("Enemies of the %s (%d)"):format(UnitFactionGroup("player") or "Horde", s.enemies))
-    setRows(card.enemyRows, KKC.sortedValues(e.enemies, function(a, b)
-        if (a.kills or 0) ~= (b.kills or 0) then return (a.kills or 0) > (b.kills or 0) end
-        return a.name < b.name
-    end), function(en)
-        local l = Theme.ClassInk(en.class) .. en.name .. "|r" .. (en.race and (Theme.SOFT .. "  " .. en.race .. "|r") or "")
-        local r = (en.kills or 0) > 0 and (SKULL .. (en.kills > 1 and (" x" .. en.kills) or "")) or ""
-        return l, nil, r
-    end)
+    -- The foes, tallied by race: how many, and how many times they fell.
+    local tally = KKC.FoeTally(e)
+    local foes = ("Foes of the %s (%d)"):format(UnitFactionGroup("player") or "Horde", s.enemies)
+    if many then
+        local parts = {}
+        for _, t in ipairs(tally) do parts[#parts + 1] = t.count .. " " .. t.label end
+        card.enemiesHeader:SetText("")
+        setRows(card.foeRows, {}, nil)
+        card.foeLine:SetText(Theme.SOFT .. foes .. ":|r " .. (#parts > 0 and table.concat(parts, ", ") or "unknown")
+            .. "  ~  " .. KKC.SlainText(s.kills))
+    else
+        card.enemiesHeader:SetText(foes)
+        card.foeLine:SetText("")
+        setRows(card.foeRows, tally, function(t)
+            return Theme.INK .. t.count .. "|r  " .. Theme.SOFT .. t.label .. "|r", nil,
+                t.kills > 0 and (SKULL .. (t.kills > 1 and (" x" .. t.kills) or "")) or ""
+        end)
+    end
 
     if not card.desc:HasFocus() then card.desc:SetText(e.description or KKC.Report.Description(e)) end
 end
 
-function UI.ShowCard(e)
+function UI.ShowCard(e, keepScroll)
     if not e then return end
     card = card or buildCard()
+    if not keepScroll or card.engagement ~= e then card.memberOffset = 0 end
     fillCard(e)
     card:Show()
 end
@@ -394,7 +434,7 @@ end
 function UI.ShowToast(e)
     toast = toast or buildToast()
     toast.engagement = e
-    toast.title:SetText(Theme.BLOOD .. (KKC.Ambushed(e) and "Ambushed!" or "Blood has been spilled") .. "|r")
+    toast.title:SetText(Theme.BLOOD .. "Blood has been spilled|r")
     toast.body:SetText(KKC.Report.Headline(e))
     toast:Show()
     if toastTimer then toastTimer:Cancel() end

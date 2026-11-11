@@ -1,6 +1,7 @@
 --[[
   War Ledger: your own running PvP totals per character (slain by race, by class, by name) and milestones.
-  Only honor kills you got yourself count, so syncing with guildies never counts a kill twice.
+  Only kills you got yourself count (your killing blows and honor kills), so syncing with guildies never counts a
+  kill twice.
   The Hall of the Kor'kron (Hub.lua) shows them as tiered challenges, Legacy style: Ledger.Tracks().
 ]]
 
