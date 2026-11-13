@@ -132,6 +132,7 @@ local function outcome(e, s)
 end
 
 local CAMPAIGN = { "A patrol through %s: %s.", "The warband marched on %s: %s.", "We held the field around %s: %s." }
+local LONE = { "A lone patrol through %s: %s.", "Alone through %s: %s.", "Scouting %s alone: %s." }
 
 -- "4 clashes with 14 Alliance"
 local function campaignClashes(e, s, faction)
@@ -141,7 +142,8 @@ end
 function Report.Description(e)
     local s, faction, place = KKC.Stats(e), KKC.enemyFaction(), Report.Place(e)
     if e.campaign then
-        return pick(e, CAMPAIGN):format(place, campaignClashes(e, s, faction)) .. outcome(e, s)
+        local lone = KKC.count(e.members) <= 1
+        return pick(e, lone and LONE or CAMPAIGN):format(place, campaignClashes(e, s, faction)) .. outcome(e, s)
     end
     local foe = s.enemies == 1 and ("a lone " .. faction) or (s.enemies .. " " .. faction)
     local opening = pick(e, OPENINGS.clash):format(foe, place)
@@ -149,13 +151,67 @@ function Report.Description(e)
     return opening .. outcome(e, s)
 end
 
--- The text people paste into the battle report post.
+-- The main leader and everyone else who led or assisted. In a campaign the main leader is whoever led the most fights
+-- (the lead can change hands during a night); ties, and a single fight, go alphabetically.
+function KKC.MainLeader(e)
+    local leaders, assists = KKC.Leaders(e)
+    local counts = e.leadFights or {}
+    table.sort(leaders, function(a, b)
+        if (counts[a] or 0) ~= (counts[b] or 0) then return (counts[a] or 0) > (counts[b] or 0) end
+        return a < b
+    end)
+    local main = leaders[1]
+    local others = {}
+    for i = 2, #leaders do others[#others + 1] = leaders[i] end
+    for _, name in ipairs(assists) do others[#others + 1] = name end
+    return main, others
+end
+
+-- "1h 45m", "35m": how long the outing lasted, first blow to last.
+local function span(e)
+    local min = math.floor(((e.stop or e.start) - e.start) / 60 + 0.5)
+    if min < 60 then return math.max(1, min) .. "m" end
+    return ("%dh %02dm"):format(math.floor(min / 60), min % 60)
+end
+
+-- The ones who stood out, by what the meter saw: the most damage and the most healing among the Kor'kron.
+local function distinguished(e)
+    if KKC.count(e.members) < 2 then return "" end
+    local dmg, heal
+    for _, m in pairs(e.members) do
+        if (m.dmg or 0) > 0 and (not dmg or m.dmg > dmg.dmg) then dmg = m end
+        if (m.heal or 0) > 0 and (not heal or m.heal > heal.heal) then heal = m end
+    end
+    local out = {}
+    if dmg then out[#out + 1] = dmg.name .. " (most damage)" end
+    if heal then
+        if heal == dmg then out[1] = dmg.name .. " (most damage and healing)" else out[#out + 1] = heal.name .. " (most healing)" end
+    end
+    return table.concat(out, ", ")
+end
+
+-- How it started: who struck first, where, and who of ours was first into battle (for a campaign, its first fight).
+local function initiated(e)
+    local place = Report.Place(e.campaign and e.anchor or e)
+    local first = KKC.Initiator(e) or "?"
+    local ambushed = KKC.Ambushed(e)
+    if ambushed then
+        return ("The %s struck first at %s; %s was first into battle."):format(KKC.enemyFaction(), place, first)
+    elseif ambushed == false then
+        return ("%s struck first at %s."):format(first, place)
+    end
+    return ("Fighting broke out at %s; %s was first into battle."):format(place, first)
+end
+
+-- The text people paste into the battle report post, in the guild's template (fields that don't apply stay empty,
+-- as the template asks), then a few details below it.
 function Report.CopyText(e, description)
     local s = KKC.Stats(e)
     local members, foes = {}, {}
     for _, m in ipairs(KKC.sortedValues(e.members)) do members[#members + 1] = m.name end
     -- The enemy only as a tally: the report is about who of ours fought.
     for _, t in ipairs(KKC.FoeTally(e)) do foes[#foes + 1] = t.count .. " " .. t.label end
+    local main, others = KKC.MainLeader(e)
 
     local location = e.zone or "?"
     if e.subzone and e.subzone ~= "" and e.subzone ~= e.zone then location = location .. " - " .. e.subzone end
@@ -163,22 +219,21 @@ function Report.CopyText(e, description)
 
     local lines = {
         "Date: " .. date("%Y-%m-%d", e.start),
-        "Time: " .. date("%H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start),
-        "Brief Description: " .. (description or Report.Description(e)),
+        "Start time: " .. date("%H:%M", e.start),
+        "Duration: " .. span(e),
+        "Short description: " .. (description or Report.Description(e)),
+        "Kills (approximate): " .. (s.kills > 0 and ("at least %d"):format(s.kills) or "none seen"),
+        "Main leader: " .. (main or ""),
+        "Additional leaders: " .. table.concat(others, ", "),
+        "Distinguished participants: " .. distinguished(e),
+        "How the event was initiated: " .. initiated(e),
         "",
         "Location: " .. location,
     }
-    if e.campaign then
-        lines[#lines + 1] = ("Clashes: %d"):format(e.fights)
-    end
+    if e.campaign then lines[#lines + 1] = ("Clashes: %d"):format(e.fights) end
     lines[#lines + 1] = ("Kor'kron (%d): %s"):format(s.members, table.concat(members, ", "))
-    local leaders, assists = KKC.Leaders(e)
-    if #leaders > 0 then lines[#lines + 1] = "Leaders: " .. table.concat(leaders, ", ") end
-    if #assists > 0 then lines[#lines + 1] = "Assists: " .. table.concat(assists, ", ") end
     if (e.allies or 0) > 0 then lines[#lines + 1] = ("Other allies: %d"):format(e.allies) end
     lines[#lines + 1] = ("Enemies: %d %s%s"):format(s.enemies, KKC.enemyFaction(), #foes > 0 and (" (" .. table.concat(foes, ", ") .. ")") or "")
-    lines[#lines + 1] = "Slain: " .. (s.kills > 0 and ("at least %d"):format(s.kills) or "none seen")
-    lines[#lines + 1] = ("Fighting time: %s | First into battle: %s"):format(KKC.duration(e.pvpSeconds), KKC.Initiator(e) or "?")
     return table.concat(lines, "\n")
 end
 
@@ -187,7 +242,7 @@ function Report.ShareLine(e)
     local s, place, faction = KKC.Stats(e), Report.Place(e), KKC.enemyFaction()
     local line
     if e.campaign then
-        line = ("[Kor'kron] Campaign through %s - %d clashes, %d against %d %s, %s."):format(place, e.fights, s.members, s.enemies, faction, KKC.SlainText(s.kills))
+        line = ("[Kor'kron] %s through %s - %d clashes, %d against %d %s, %s."):format(KKC.Campaign.Name(e), place, e.fights, s.members, s.enemies, faction, KKC.SlainText(s.kills))
     elseif s.kills > 0 then
         line = ("[Kor'kron] Blood at %s - %d against %d %s, %s."):format(place, s.members, s.enemies, faction, KKC.SlainText(s.kills))
     else

@@ -76,6 +76,7 @@ function Summary.Build(list, from, to)
     local s = {
         from = from, to = to, engagements = 0, notable = 0, ambushed = 0, struck = 0, kills = 0, fallen = 0, myDeaths = 0, seconds = 0,
         places = {}, members = {}, enemies = {}, races = {}, classes = {}, dmg = {}, heal = {}, list = {},
+        classOf = {}, -- name -> class token, to color names in the window
     }
     local bestScore = -1
     for _, e in ipairs(list or {}) do
@@ -90,11 +91,13 @@ function Summary.Build(list, from, to)
             s.seconds = s.seconds + (e.pvpSeconds or 0)
             bump(s.places, KKC.Report.Place(e))
             for name, m in pairs(e.members) do
+                s.classOf[name] = s.classOf[name] or m.class
                 if name ~= me then bump(s.members, name) elseif m.died then s.myDeaths = s.myDeaths + 1 end
                 if (m.dmg or 0) > 0 then bump(s.dmg, name, m.dmg) end
                 if (m.heal or 0) > 0 then bump(s.heal, name, m.heal) end
             end
             for name, en in pairs(e.enemies) do
+                s.classOf[name] = s.classOf[name] or en.class
                 local k = en.kills or 0
                 if k > 0 then
                     bump(s.enemies, name, k)
@@ -128,7 +131,14 @@ local function times(v) return "x" .. v end
 local function plural(n, one, many) return n == 1 and one or many end
 
 -- The chronicle as { label, text } lines (label may be nil), shared by the window and the copy text.
-local function chronicle(s, guild)
+-- rich: colored for the window (class-colored names, kills green, losses red, places blue); plain for the copy text.
+local function chronicle(s, guild, rich)
+    local T = KKC.Theme
+    local function c(color, text) return rich and (color .. text .. "|r") or text end
+    local function who(name) return rich and (T.ClassLight(s.classOf[name]) .. name .. "|r") or name end
+    local function cls(token) return rich and (T.ClassLight(token) .. KKC.className(token) .. "|r") or KKC.className(token) end
+    local function place(name) return c(T.PLACE, name) end
+    local function good(v) return c(T.GOOD, v) end
     local lines = {}
     local function add(label, fmt, ...) lines[#lines + 1] = { label, fmt:format(...) } end
     if guild then add(nil, "Battles fought by guildies with the addon, while you were elsewhere.") end
@@ -136,24 +146,25 @@ local function chronicle(s, guild)
         add(nil, "No battles recorded. The blades stay sheathed... for now.")
         return lines
     end
-    add("Battles", "%d (%d of note)  ~  %d foes slain  ~  %d Kor'kron fallen  ~  %s of battle",
-        s.engagements, s.notable, s.kills, s.fallen, KKC.duration(s.seconds))
+    add("Battles", "%d (%d of note)  ~  %s  ~  %s  ~  %s of battle",
+        s.engagements, s.notable, c(T.GOOD, s.kills .. " foes slain"), c(T.BAD, s.fallen .. " Kor'kron fallen"), KKC.duration(s.seconds))
     if s.struck + s.ambushed > 0 then
-        add("The first blow", "ours %d %s, theirs %d %s", s.struck, plural(s.struck, "time", "times"), s.ambushed, plural(s.ambushed, "time", "times"))
+        add("The first blow", "%s, %s", c(T.GOOD, ("ours %d %s"):format(s.struck, plural(s.struck, "time", "times"))),
+            c(T.BAD, ("theirs %d %s"):format(s.ambushed, plural(s.ambushed, "time", "times"))))
     end
     if not guild and s.myDeaths > 0 then add(nil, "You fell %d %s, and rose again.", s.myDeaths, plural(s.myDeaths, "time", "times")) end
-    add("Contested ground", "%s", top(s.places, 4, nil, inParens))
-    add(guild and "Kor'kron in the field" or "Fought beside", "%s", top(s.members, 5))
-    add("Most slain", "%s", top(s.enemies, 4, nil, times))
-    add("Slain by race", "%s", top(s.races, 6))
-    add("Slain by class", "%s", top(s.classes, 9, KKC.className))
+    add("Contested ground", "%s", top(s.places, 4, place, inParens))
+    add(guild and "Kor'kron in the field" or "Fought beside", "%s", top(s.members, 5, who))
+    add("Most slain", "%s", top(s.enemies, 4, who, function(v) return good(times(v)) end))
+    add("Slain by race", "%s", top(s.races, 6, nil, good))
+    add("Slain by class", "%s", top(s.classes, 9, cls, good))
     if s.biggest then
         local st = KKC.Stats(s.biggest)
-        add("Greatest battle", "%s, %s - %d against %d, %d slain", KKC.Report.Place(s.biggest), date("%a %H:%M", s.biggest.start),
-            st.members, st.enemies, st.kills)
+        add("Greatest battle", "%s, %s - %d against %s, %s", place(KKC.Report.Place(s.biggest)), date("%a %H:%M", s.biggest.start),
+            st.members, c(T.Foe(), st.enemies), good(st.kills .. " slain"))
     end
-    add("Deadliest blades", "%s", top(s.dmg, 3, nil, KKC.shortNumber))
-    add("Most mending", "%s", top(s.heal, 3, nil, KKC.shortNumber))
+    add("Deadliest blades", "%s", top(s.dmg, 3, who, KKC.shortNumber))
+    add("Most mending", "%s", top(s.heal, 3, who, function(v) return c(T.LIGHT_MEND, KKC.shortNumber(v)) end))
     return lines
 end
 
@@ -170,9 +181,9 @@ local function heading(label, guild) return (guild and "Word from the Field" or 
 -- For a window: heading, date span and the body with colored labels. dark = the hall's colors, else parchment ink.
 function Summary.Parts(s, label, guild, dark)
     local T, out = KKC.Theme, {}
-    local head, text, soft = T.BLOOD, T.INK, T.SOFT
+    local head, text, soft = T.AMBER or T.BLOOD, T.INK, T.SOFT
     if dark then head, text, soft = T.GOLD, T.LIGHT, T.DIM end
-    for _, l in ipairs(chronicle(s, guild)) do
+    for _, l in ipairs(chronicle(s, guild, dark)) do
         out[#out + 1] = l[1] and (head .. l[1] .. ":|r " .. text .. l[2] .. "|r") or (soft .. l[2] .. "|r")
     end
     return heading(label, guild), span(s), table.concat(out, "\n")

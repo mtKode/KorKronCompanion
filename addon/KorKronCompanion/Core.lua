@@ -151,13 +151,13 @@ end
 KKC.defaults = {
     settings = {
         sync = false,           -- share engagements with guildies over GUILD addon messages (/kkc sync on)
-        paper = "clean",        -- report paper (Theme.PAPERS): clean | torn | war | lore | map
         notify = "quiet",       -- off | quiet (one chat line) | toast | prompt; tracking runs either way
         promptAll = false,      -- true: notify everyone, not just the initiator
         mergeGap = 60,          -- seconds out of combat before an engagement closes
         notableSeconds = 20,    -- this much PvP combat makes an engagement notable
         notableEnemies = 2,     -- or this many enemy players
         campaignGap = 1800,     -- fights closer than this (seconds) are one campaign: one report for the outing
+        minimap = { hide = false, angle = 200 }, -- the minimap button (Minimap.lua): hidden?, where on the edge (degrees)
     },
     log = {},   -- your engagements, newest first
     feed = {},  -- guildies' fights you weren't in, newest first
@@ -188,9 +188,8 @@ local function migrate(db)
         if db.settings.notify == "toast" then db.settings.notify = "quiet" end
         db.schema = 2
     end
-    -- 3: the clean quest page is the default paper; "torn" was the old default, not a choice.
+    -- 3: (was the report paper's default; that setting is gone, the card is a dark sheet now)
     if db.schema < 3 then
-        if db.settings.paper == "torn" then db.settings.paper = "clean" end
         db.schema = 3
     end
     -- 4: the first kill tracking (9 Nov) named victims by first name only and stored race tokens. Fold each such kill

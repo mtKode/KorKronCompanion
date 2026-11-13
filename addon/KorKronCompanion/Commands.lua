@@ -10,6 +10,7 @@
   /kkc notify off|quiet|toast|prompt     how you're told about a battle (default quiet: one chat line)
   /kkc all on|off      notify you even when you're not the initiator
   /kkc sync on|off     share battles with guildies over hidden guild messages (off by default)
+  /kkc minimap on|off  show or hide the minimap button (left click: the hall, right click: the latest report)
   /kkc ledger chat     your War Ledger totals in chat
   /kkc test            a made-up engagement to preview the toast, card and texts
   /kkc close           close the open engagement now instead of waiting
@@ -108,6 +109,13 @@ commands.campaign = function(arg)
     KKC.UI.ShowCard(KKC.Campaign.View(c))
 end
 
+commands.minimap = function(arg)
+    local m = KKC.settings().minimap
+    if arg == "on" then m.hide = false elseif arg == "off" then m.hide = true end
+    KKC.MinimapButton.Refresh()
+    KKC.say("minimap button: |cffffd100" .. (m.hide and "hidden" or "shown") .. "|r (/kkc minimap on|off)")
+end
+
 commands.hall = function() KKC.Hub.Toggle() end
 for _, period in ipairs({ "day", "week", "lastweek", "month", "lastmonth" }) do
     commands[period] = function() KKC.Hub.Show("chronicle", period) end
@@ -141,15 +149,6 @@ commands.sync = function(arg)
         .. (KKC.settings().sync and " (notable battles are shared with guildies who run the addon)" or " (nothing is sent or read)"))
 end
 
-commands.paper = function(arg)
-    for _, p in ipairs(KKC.Theme.PAPERS) do
-        if p.key == arg then KKC.settings().paper = arg; KKC.Theme.RepaintDocuments() end
-    end
-    local keys = {}
-    for _, p in ipairs(KKC.Theme.PAPERS) do keys[#keys + 1] = p.key end
-    KKC.say("report paper: |cffffd100" .. KKC.Theme.Paper().label .. "|r (" .. table.concat(keys, ", ") .. ")")
-end
-
 commands.ledger = function(arg)
     if arg == "chat" then return KKC.Ledger.Print() end
     KKC.Hub.Show("ledger")
@@ -179,5 +178,5 @@ SlashCmdList.KORKRONCOMPANION = function(msg)
     local fn = commands[cmd ~= "" and cmd or "hall"]
     if fn then return fn(arg) end
     KKC.say("commands: (none) opens the hall, log, card [n], campaign [n], copy [n], day, week, lastweek, month, lastmonth, battles, ledger, "
-        .. "settings, guild [n], sync on|off, notify off|quiet|toast|prompt, all on|off, test, close, debug, reset")
+        .. "settings, guild [n], sync on|off, minimap on|off, notify off|quiet|toast|prompt, all on|off, test, close, debug, reset")
 end

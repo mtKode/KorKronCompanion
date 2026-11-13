@@ -108,17 +108,26 @@ Setting `notify`: `off` | `quiet` (one chat line, the default) | `toast` (a note
 participant list (rule #2 screenshot); enemies with ×kills; damage/healing columns; buttons **Copy report**,
 **Share to guild**, **Screenshot**, **Close**. The description box is editable and prefilled with a draft.
 
-**Copy box** text (paste under the battle report title):
+**Copy box** text, in the guild's battle report template (fields that don't apply stay empty), then the details:
 ```
 Date: 2026-11-04
-Time: 21:14 - 21:18
-Brief Description: Ambushed by 6 Alliance at Tarren Mill. 5 slain, 1 Kor'kron fell.
+Start time: 20:15
+Duration: 1h 45m
+Short description: A patrol through Hillsbrad Foothills: 4 clashes with 14 Alliance. At least 9 slain.
+Kills (approximate): at least 9
+Main leader: Grukk
+Additional leaders: Zhara
+Distinguished participants: Kaiva (most damage), Zhara (most healing)
+How the event was initiated: The Alliance struck first at Tarren Mill; Kaiva was first into battle.
 
-Location: Hillsbrad Foothills - Tarren Mill
-Kor'kron (4): Kaiva, Grukk, Zhara, Morth
-Enemies (6): Arthas (Human Paladin) x2, Jaina (Human Mage), ...
-Slain: 5 | Fallen: Grukk
+Location: Hillsbrad Foothills - Tarren Mill, Southshore
+Clashes: 4
+Kor'kron (4): Grukk, Kaiva, Morth, Zhara
+Enemies: 14 Alliance (6 Human, 4 Dwarf, 4 Night Elf)
 ```
+The main leader is whoever led the most fights of the outing; the other leaders and the raid assists are the
+additional leaders. Distinguished participants come from the meter (most damage, most healing). The template also
+asks for a screenshot of the raid panel with the clock about every 50 minutes.
 
 **Share to guild** (≤255 chars, one line, goes to Discord through the bridge if linked):
 `[Kor'kron] Tarren Mill held - 4 against 6 Alliance, 5 slain, Grukk fell in glory.`
@@ -139,14 +148,30 @@ faction banner and emblem, inset boxes, icon buttons. Sections on the left:
 Weeks and days follow the server's reset (`C_DateAndTime.GetWeeklyResetStartTime`, Wednesday on EU); months are
 calendar months (local time).
 
+**On its own it is a book** (1000 x 600, two equal pages; `Theme.BookFrame` draws the leather cover and edge, the
+pages, the stitched binding, page edges and a ribbon, from the clean quest page and plain shapes since the client has
+no open-book art). The left page has the guild's name in yellow, who you are, the five sections in two columns, then
+the open section's own controls (heading, periods, the Chronicle's tiles 2 x 2, paging, buttons); the right page has
+the section itself. Each section's `Layout(book, side)` places its controls for the book or for the docked hall.
+The book is dark, like the guild's WoW Oracle tool: the page texture darkened, light text, gold titles and labels on
+a black shadow, dark panels and buttons with thin tan borders (`Theme.SetBook`; ink on light paper was tried first and
+read worse). Docked in the Legacy window the hall keeps its dark one-panel layout.
+The pages use our own aged-paper texture (`Media/Page.tga`, made by `tools/make_textures.py`), darkened. The contents
+and the period choices are links (the chosen one gold with a diamond),
+ribbon bookmarks hang out of the bottom of the book (one per section, the open one lower), brass caps sit on the
+cover's corners, and Battles reads like a diary: a heading per day, then times and battles, campaigns as paper cards
+pinned to the page. A minimap button (`Minimap.lua`) opens it.
+
 **In the Legacy window:** our own side tab under Blizzard's three (the `common-sidetab` art, faction banner icon).
 Clicking it lays the same hall over the Legacy content, without its own border, banner and crest. Blizzard's tabs and
 closing the window take it away again. Blizzard's frames are only hooked (`HookScript`), never changed, so this can't
 taint them. The Legacy window loads on demand, so the tab is attached on `ADDON_LOADED` of `Blizzard_LegacySystem`.
 
 **Factions:** the Horde gets red and iron (Horde war table, Horde emblem and banner, "Lok'tar ogar!"); the Alliance
-gets blue and gold (Alliance war table, emblem and banner, "For the Alliance!"). The battle card and toast follow
-the same theme.
+gets blue and gold (Alliance war table, emblem and banner, "For the Alliance!"). The battle card and the scribe
+window are single dark sheets of the same book (`Theme.SheetFrame`): leather cover with brass corners, the darkened
+page texture, gold titles, light text, class-colored names, the enemy in their faction's color, kills green, and the
+book's dark buttons. (A choice of report papers existed while the card was parchment; it was removed.)
 
 The feed: several guildies reporting the same fight merge into one entry (same zone and time rules as your own
 fights). A report that lands in the feed while you're still fighting moves to your own battle once that exists
@@ -158,12 +183,12 @@ built later.
 ## Look and voice (RP-PvP)
 
 Every window should read like a Kor'kron dispatch, not an addon panel.
-- **Frames**: Blizzard's Horde war-table border (the `BFAMissionHorde` nine-slice pieces, defined in Theme.lua), a
-  parchment page (`ChromieTime-Parchment`), a faint `HordeEmblem` watermark, the `HordeFrame-Header` banner for
-  titles, and `Campaign-QuestLog-LoreDivider` between sections. Every atlas is in the Forever atlas list and is
-  checked again at runtime, with a plain fallback.
-- **Type**: Morpheus for titles, Friz Quadrata for text, ink browns on parchment, a blood red for headings and
-  ambushes. Class colors are darkened so they read on parchment.
+- **Frames**: the book and its sheets (see above); docked, Blizzard's Horde war-table border (the `BFAMissionHorde`
+  nine-slice pieces, defined in Theme.lua) around darkened parchment (`ChromieTime-Parchment`), with a faint
+  `HordeEmblem` watermark and the `HordeFrame-Header` banner. Every atlas is in the Forever atlas list and is checked
+  again at runtime, with a plain fallback.
+- **Type**: Morpheus for titles, Friz Quadrata for text; light text and gold titles on dark pages, class colors as
+  they are.
 - **Voice**: in-character labels ("Warriors of the Kor'kron", "Enemies of the Horde", "Account of the battle",
   "Scribe report", "Sound the horn", "Capture likeness", "War Chronicle", "Word from the Field"). Button tooltips
   say plainly what each one does. Descriptions and share lines vary per battle, picked from the start time so a

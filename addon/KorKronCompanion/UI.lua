@@ -14,8 +14,9 @@ local Theme = KKC.Theme
 
 local SKULL = "|TInterface\\TargetingFrame\\UI-TargetingFrame-Skull:13|t"
 
--- A movable war-table window. Returns the frame and its banner title text.
-local function panel(name, w, h, title)
+-- A movable window: a dark sheet like the hall's book (dark = "sheet": the battle card, the scribe window), or the
+-- dark hall's frame (dark = true).
+local function panel(name, w, h, title, dark)
     local f = CreateFrame("Frame", name, UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
     f:SetSize(w, h)
     f:SetFrameStrata("DIALOG")
@@ -25,11 +26,17 @@ local function panel(name, w, h, title)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
-    f.banner = Theme.WarFrame(f, title)
+    if dark == "sheet" then
+        f.banner = Theme.SheetFrame(f, title)
+    else
+        local parts = Theme.DarkFrame(f, title)
+        f.banner = parts.title
+    end
     if name then tinsert(UISpecialFrames, name) end -- Esc closes it
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -12, -12)
+    close:SetPoint("TOPRIGHT", dark == "sheet" and -18 or -12, dark == "sheet" and -18 or -12)
     close:SetFrameLevel(f:GetFrameLevel() + 10)
+    close:SetScript("OnClick", function() f:Hide() end) -- the stock handler didn't close our windows on this client
     f.close = close
     f:Hide()
     return f
@@ -42,25 +49,35 @@ end
 local copyFrame
 function UI.ShowCopy(body, title, hint)
     if not copyFrame then
-        local f = panel("KorKronCompanionCopy", 540, 380)
+        -- Dark like the hall's book: light text on a dark page reads well, and it's what you copy from.
+        local f = panel("KorKronCompanionCopy", 580, 440, nil, "sheet")
         f:SetPoint("CENTER", 0, 40)
         f:SetFrameStrata("FULLSCREEN_DIALOG") -- always above the battle card it was opened from
-        f.title = Theme.GoldTitle(f, 22)
-        f.title:SetPoint("TOP", 0, -26)
-        f.hint = Theme.Text(f, 11, "CENTER")
+        f.title = Theme.SheetTitle(f, 22, "CENTER")
+        f.title:SetPoint("TOP", 0, -32)
+        f.hint = Theme.LightText(f, 12, "CENTER", false, true)
+        f.hint:SetTextColor(0.72, 0.64, 0.50)
         f.hint:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
-        f.hint:SetWidth(470)
-        local rule = Theme.Rule(f, 460)
+        f.hint:SetWidth(480)
+        local rule = Theme.Rule(f, 480, true)
         rule:SetPoint("TOP", f.hint, "BOTTOM", 0, -10)
-        local scroll = CreateFrame("ScrollFrame", "KorKronCompanionCopyScroll", f, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", rule, "BOTTOMLEFT", -10, -10) -- just below the rule (which starts 40 px in)
-        scroll:SetPoint("BOTTOMRIGHT", -48, 30)
+        -- The text on a dark panel like the book's boxes, with Close under it.
+        local box = Theme.SheetPanel(f)
+        box:SetPoint("TOPLEFT", rule, "BOTTOMLEFT", -14, -8)
+        box:SetPoint("BOTTOMRIGHT", -36, 70)
+        local scroll = CreateFrame("ScrollFrame", "KorKronCompanionCopyScroll", box, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 10, -10)
+        scroll:SetPoint("BOTTOMRIGHT", -30, 10)
+        local done = Theme.HallButton(f, "Close", 160, 32, nil, nil, function() f:Hide() end)
+        done.kkSheet = true
+        done:SetSelected(false)
+        done:SetPoint("BOTTOM", 0, 30)
         local edit = CreateFrame("EditBox", nil, scroll)
         edit:SetMultiLine(true)
         edit:SetAutoFocus(true)
         edit:SetFontObject(ChatFontNormal)
         Theme.Font(edit, 14)
-        edit:SetTextColor(unpack(Theme.INK_RGB))
+        edit:SetTextColor(0.92, 0.87, 0.79)
         edit:SetWidth(450)
         edit:SetScript("OnEscapePressed", function() f:Hide() end)
         -- Typing would change the text; put it back instead (edit the account on the battle card).
@@ -100,7 +117,7 @@ local ROW_TOP, ROW_STEP = -212, 20
 local MEND_W, DMG_W, GAP = 86, 52, 6
 
 local function cell(parent, size, justify, width)
-    local fs = Theme.Text(parent, size, justify)
+    local fs = Theme.SheetText(parent, size, justify)
     fs:SetWidth(width)
     fs:SetWordWrap(false)
     return fs
@@ -137,7 +154,7 @@ local function setRows(rows, list, fill)
     for i, row in ipairs(rows) do
         local item = list[i]
         if i == max and #list > max then
-            setRow(row, Theme.SOFT .. ("and %d more"):format(#list - max + 1) .. "|r")
+            setRow(row, Theme.DIM .. ("and %d more"):format(#list - max + 1) .. "|r")
         elseif item then
             setRow(row, fill(item))
         else
@@ -148,31 +165,31 @@ end
 
 local function buildCard()
     -- 780 wide: Forever names are "First Surname", and a TRP3 title can come in front.
-    local f = panel("KorKronCompanionCard", CARD_W, 650, "Battle Report")
+    local f = panel("KorKronCompanionCard", CARD_W, 650, "Battle Report", "sheet")
     f:SetPoint("CENTER", 0, 10)
 
     -- Everything stays inside the iron border (about 36 px on each side), and the place name starts below the
     -- banner, which hangs about 62 px into the card.
-    f.place = Theme.GoldTitle(f, 28)
+    f.place = Theme.SheetTitle(f, 28, "CENTER")
     f.place:SetPoint("TOP", 0, -68)
-    f.when = Theme.Text(f, 14, "CENTER")
+    f.when = Theme.SheetText(f, 14, "CENTER")
     f.when:SetPoint("TOP", f.place, "BOTTOM", 0, -4)
-    f.size = Theme.Text(f, 14, "CENTER")
+    f.size = Theme.SheetText(f, 14, "CENTER")
     f.size:SetPoint("TOP", f.when, "BOTTOM", 0, -4)
     f.size:SetWidth(CARD_W - 80)
-    f.first = Theme.Text(f, 14, "CENTER")
+    f.first = Theme.SheetText(f, 14, "CENTER")
     f.first:SetPoint("TOP", f.size, "BOTTOM", 0, -3)
     f.first:SetWidth(CARD_W - 80)
-    local top = Theme.Rule(f, CARD_W - 100)
+    local top = Theme.Rule(f, CARD_W - 100, true)
     top:SetPoint("TOP", f.first, "BOTTOM", 0, -12)
 
     -- The Kor'kron are what the card is for (the officers' proof of who fought); the enemy is only tallied by race.
     -- Up to 13 warriors: one wide column (with TRP3 titles) and the foes' tally on the right. More: two columns of
     -- warriors across the whole card (26 names, no titles so the names fit) and the tally as one line below them.
     local left, right = 42, 548
-    f.membersHeader = Theme.Heading(f, 18)
+    f.membersHeader = Theme.SheetTitle(f, 18)
     f.membersHeader:SetPoint("TOPLEFT", left, ROW_TOP + 26)
-    f.enemiesHeader = Theme.Heading(f, 18)
+    f.enemiesHeader = Theme.SheetTitle(f, 18)
     f.enemiesHeader:SetPoint("TOPLEFT", right, ROW_TOP + 26)
     f.wideRows = makeRows(f, left, right - left - 30, true)
     f.colRows = makeRows(f, left, 336, true)
@@ -190,33 +207,30 @@ local function buildCard()
         UI.ShowCard(self.engagement, true)
     end)
     f.foeRows = makeRows(f, right, CARD_W - right - 40, false, 64)
-    f.foeLine = Theme.Text(f, 14, "CENTER")
+    f.foeLine = Theme.SheetText(f, 14, "CENTER")
     f.foeLine:SetPoint("BOTTOM", 0, 166)
     f.foeLine:SetWidth(CARD_W - 80)
     f.foeLine:SetWordWrap(false)
 
-    local bottom = Theme.Rule(f, CARD_W - 100)
+    local bottom = Theme.Rule(f, CARD_W - 100, true)
     bottom:SetPoint("BOTTOM", 0, 156)
-    f.descLabel = Theme.Heading(f, 18)
+    f.descLabel = Theme.SheetTitle(f, 18)
     f.descLabel:SetPoint("BOTTOMLEFT", 42, 120)
     f.descLabel:SetText("Account of the battle")
 
-    local box = CreateFrame("Frame", nil, f)
-    box:SetPoint("BOTTOMLEFT", 38, 64)
-    box:SetPoint("BOTTOMRIGHT", -38, 64)
+    local box = Theme.SheetPanel(f)
+    box:SetPoint("BOTTOMLEFT", 38, 66)
+    box:SetPoint("BOTTOMRIGHT", -38, 66)
     box:SetHeight(54)
-    local boxBg = box:CreateTexture(nil, "BACKGROUND")
-    boxBg:SetAllPoints()
-    boxBg:SetColorTexture(0.30, 0.17, 0.06, 0.10)
     local desc = CreateFrame("EditBox", nil, box)
-    desc:SetPoint("TOPLEFT", 6, -5)
-    desc:SetPoint("BOTTOMRIGHT", -6, 5)
+    desc:SetPoint("TOPLEFT", 8, -6)
+    desc:SetPoint("BOTTOMRIGHT", -8, 6)
     desc:SetMultiLine(true)
     desc:SetAutoFocus(false)
     desc:SetMaxLetters(400)
     desc:SetFontObject(ChatFontNormal)
     Theme.Font(desc, 15)
-    desc:SetTextColor(unpack(Theme.INK_RGB))
+    desc:SetTextColor(0.92, 0.87, 0.79)
     desc:SetScript("OnEscapePressed", desc.ClearFocus)
     desc:SetScript("OnTextChanged", function(self, user)
         if not (user and f.engagement) then return end
@@ -226,41 +240,52 @@ local function buildCard()
     end)
     f.desc = desc
 
+    local function button(label, width, tip, onClick)
+        local b = Theme.HallButton(f, label, width, 30, nil, tip, onClick)
+        b.kkSheet = true -- the book's dark button with a tan border
+        b:SetSelected(false)
+        return b
+    end
     f.buttons = {
-        Theme.Button(f, "Scribe report", 124, "Copy the battle report text (Date, Time, Brief Description and the details) to paste into the Discord post.",
+        button("Scribe report", 160, "Copy the battle report in the guild's template (Date, Start time, Duration, Short description, Kills, leaders, ...) to paste into the Discord post.",
             function() UI.CopyReport(f.engagement) end),
-        Theme.Button(f, "Sound the horn", 124, "Post a one-line account of this battle in guild chat. If guild chat is linked, it reaches Discord too.",
+        button("Sound the horn", 160, "Post a one-line account of this battle in guild chat. If guild chat is linked, it reaches Discord too.",
             function() UI.Share(f.engagement) end),
-        Theme.Button(f, "Capture likeness", 130, "Hides these buttons for a few seconds: press Print Screen to save the card as proof of who fought.",
+        button("Capture likeness", 160, "Hides these buttons for a few seconds: press Print Screen to save the card as proof of who fought.",
             function() UI.Screenshot() end),
-        Theme.Button(f, "Close", 90, nil, function() f:Hide() end),
+        button("Close", 120, nil, function() f:Hide() end),
     }
-    -- Centered row, clear of the bottom border.
-    f.buttons[1]:SetPoint("BOTTOMLEFT", (CARD_W - 492) / 2, 30) -- 492 = the four buttons and their gaps
+    -- Centered row, clear of the bottom edge.
+    f.buttons[1]:SetPoint("BOTTOMLEFT", (CARD_W - 624) / 2, 26) -- 624 = the four buttons and their gaps
     for i = 2, #f.buttons do f.buttons[i]:SetPoint("LEFT", f.buttons[i - 1], "RIGHT", 8, 0) end
-    f.hint = Theme.Text(f, 13, "CENTER")
+    f.hint = Theme.SheetText(f, 13, "CENTER")
     f.hint:SetPoint("BOTTOM", 0, 34)
     f.hint:Hide()
     return f
 end
 
+-- "at least 5 slain" in green, "no kills seen" dim.
+local function slain(n) return (n > 0 and Theme.GOOD or Theme.DIM) .. KKC.SlainText(n) .. "|r" end
+
 local function fillCard(e)
     local s = KKC.Stats(e)
     card.engagement = e
-    if card.banner then card.banner:SetText(e.campaign and "Campaign Report" or "Battle Report") end
-    card.descLabel:SetText(e.campaign and "Account of the campaign" or "Account of the battle")
+    local name, lower = "Battle", "battle"
+    if e.campaign then name, lower = KKC.Campaign.Name(e) end
+    if card.banner then card.banner:SetText(name == "Battle" and "Battle Report" or (name .. " Report")) end
+    card.descLabel:SetText("Account of the " .. lower)
     card.place:SetText(KKC.Report.Place(e))
     local where = (not e.campaign and e.subzone ~= "" and e.subzone ~= e.zone) and (e.zone .. ", ") or ""
-    card.when:SetText(Theme.INK .. where .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start) .. "|r")
+    card.when:SetText(Theme.DIM .. where .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start) .. "|r")
     local leaders = KKC.Leaders(e)
     local led = #leaders > 0 and ("  ~  Led by " .. table.concat(leaders, ", ")) or ""
     if e.campaign then
-        card.size:SetText(("%d clashes  ~  %d against %d  ~  %s of battle  ~  %s"):format(
-            e.fights, s.members, s.enemies, KKC.duration(e.pvpSeconds), KKC.SlainText(s.kills)))
+        card.size:SetText(("%d clashes  ~  %d against %s  ~  %s of battle  ~  %s"):format(
+            e.fights, s.members, Theme.Foe() .. s.enemies .. "|r", KKC.duration(e.pvpSeconds), slain(s.kills)))
         card.first:SetText("First into battle: " .. (KKC.Initiator(e) or "?") .. led)
     else
-        card.size:SetText(("%d against %d  ~  %s of battle  ~  %s"):format(
-            s.members, s.enemies, KKC.duration(e.pvpSeconds), KKC.SlainText(s.kills)))
+        card.size:SetText(("%d against %s  ~  %s of battle  ~  %s"):format(
+            s.members, Theme.Foe() .. s.enemies .. "|r", KKC.duration(e.pvpSeconds), slain(s.kills)))
         card.first:SetText(("First into battle: %s%s%s"):format(KKC.Initiator(e) or "?", led,
             e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
     end
@@ -280,14 +305,14 @@ local function fillCard(e)
     for i = offset + 1, #members do shown[#shown + 1] = members[i] end
     local scrolls = #members > #rows
     card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members)
-        .. (scrolls and (Theme.SOFT .. ("   %d-%d, scroll for more"):format(offset + 1, offset + #rows - (#shown > #rows and 1 or 0)) .. "|r") or ""))
+        .. (scrolls and (Theme.DIM .. ("   %d-%d, scroll for more"):format(offset + 1, offset + #rows - (#shown > #rows and 1 or 0)) .. "|r") or ""))
     setRows(rows, shown, function(m)
         local title = not many and KKC.rpTitle(m.name)
-        local l = (title and (Theme.SOFT .. title .. "|r ") or "") .. Theme.ClassInk(m.class) .. m.name .. "|r"
+        local l = (title and (Theme.DIM .. title .. "|r ") or "") .. Theme.ClassLight(m.class) .. m.name .. "|r"
         -- Our deaths aren't shown on the card (they stay in the data for the summaries); the skull is for foes slain.
         if use == 3 then return l end
         local dmg = (m.dmg or 0) > 0 and KKC.shortNumber(m.dmg) or ""
-        local mend = (m.heal or 0) > 0 and (Theme.MEND .. KKC.shortNumber(m.heal) .. " mend|r") or ""
+        local mend = (m.heal or 0) > 0 and (Theme.LIGHT_MEND .. KKC.shortNumber(m.heal) .. " mend|r") or ""
         return l, dmg, mend
     end)
 
@@ -299,13 +324,13 @@ local function fillCard(e)
         for _, t in ipairs(tally) do parts[#parts + 1] = t.count .. " " .. t.label end
         card.enemiesHeader:SetText("")
         setRows(card.foeRows, {}, nil)
-        card.foeLine:SetText(Theme.SOFT .. foes .. ":|r " .. (#parts > 0 and table.concat(parts, ", ") or "unknown")
-            .. "  ~  " .. KKC.SlainText(s.kills))
+        card.foeLine:SetText(Theme.DIM .. foes .. ":|r " .. Theme.Foe() .. (#parts > 0 and table.concat(parts, ", ") or "unknown")
+            .. "|r  ~  " .. slain(s.kills))
     else
         card.enemiesHeader:SetText(foes)
         card.foeLine:SetText("")
         setRows(card.foeRows, tally, function(t)
-            return Theme.INK .. t.count .. "|r  " .. Theme.SOFT .. t.label .. "|r", nil,
+            return Theme.Foe() .. t.count .. "|r  " .. Theme.LIGHT .. t.label .. "|r", nil,
                 t.kills > 0 and (SKULL .. (t.kills > 1 and (" x" .. t.kills) or "")) or ""
         end)
     end
@@ -334,7 +359,7 @@ end)
 
 function UI.CopyReport(e)
     if not e then return end
-    UI.ShowCopy(KKC.Report.CopyText(e, e.description), e.campaign and "Campaign Report" or "Battle Report",
+    UI.ShowCopy(KKC.Report.CopyText(e, e.description), (e.campaign and KKC.Campaign.Name(e) or "Battle") .. " Report",
         "Ctrl+C, then paste it into the post. Title: your main's name and surname. Attach the captured likeness of the card.")
 end
 
@@ -367,7 +392,7 @@ function UI.Screenshot()
     for _, b in ipairs(card.buttons) do b:Hide() end
     card.close:Hide()
     card.desc:ClearFocus()
-    card.hint:SetText(Theme.SOFT .. "Press Print Screen now|r")
+    card.hint:SetText(Theme.DIM .. "Press Print Screen now|r")
     card.hint:Show()
     -- The hint itself would show in the picture: fade it out before the player presses the key.
     C_Timer.After(1.2, function() card.hint:Hide() end)

@@ -54,7 +54,7 @@ function Campaign.View(c)
         campaign = true, anchor = first, id = "campaign-" .. tostring(c.id), owner = first.owner,
         start = c.start, stop = c.stop, zone = first.zone, subzone = first.subzone,
         fights = #c.fights, pvpSeconds = 0, allies = 0, ambushes = 0, struck = 0, minor = c.minor,
-        enemies = {}, members = {}, ownKills = {}, reports = {}, leaders = nil,
+        enemies = {}, members = {}, ownKills = {}, reports = {}, leaders = nil, leadFights = {},
         places = {}, zones = {}, description = first.campaignDescription,
     }
     v.reports = first.reports -- first into battle: whoever opened the campaign's first fight
@@ -98,6 +98,7 @@ function Campaign.View(c)
         for name, role in pairs(e.leaders or {}) do
             v.leaders = v.leaders or {}
             if v.leaders[name] ~= "leader" then v.leaders[name] = role end
+            if role == "leader" then v.leadFights[name] = (v.leadFights[name] or 0) + 1 end -- picks the main leader
         end
     end
     -- "Hillsbrad Foothills - Tarren Mill, Southshore; Alterac Mountains"
@@ -107,6 +108,12 @@ function Campaign.View(c)
     end
     v.location = table.concat(location, "; ")
     return v
+end
+
+-- What an outing is called: a campaign with guildies, a lone patrol on your own. Returns the name and its lowercase.
+function Campaign.Name(view)
+    if KKC.count(view.members) <= 1 then return "Lone Patrol", "lone patrol" end
+    return "Campaign", "campaign"
 end
 
 -- The campaign an engagement belongs to (as a view), when it has two or more fights.

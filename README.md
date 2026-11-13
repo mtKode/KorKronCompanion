@@ -15,7 +15,7 @@ checkout links it instead; it's not tracked in git.)
 ## Commands
 | Command | |
 |---|---|
-| `/kkc` | Open or close the Hall of the Kor'kron (also a side tab in the Legacy window) |
+| `/kkc` | Open or close the Hall of the Kor'kron (also the minimap button, and a side tab in the Legacy window) |
 | `/kkc day` / `week` / `lastweek` / `month` / `lastmonth` | The hall's Chronicle for that period |
 | `/kkc battles` / `ledger` / `settings` | The hall on that section |
 | `/kkc guild [n]` | The hall's From the field section, or guild feed battle n's card |
@@ -25,6 +25,7 @@ checkout links it instead; it's not tracked in git.)
 | `/kkc notify off\|quiet\|toast\|prompt` | How you're told about a battle (default `quiet`: one chat line) |
 | `/kkc all on\|off` | Tell you even when you weren't first into battle |
 | `/kkc sync on\|off` | Share battles with guildies (default off) |
+| `/kkc minimap on\|off` | Show or hide the minimap button (left click: the hall, right click: the latest report, drag to move) |
 | `/kkc test` | A made-up battle to preview the note and the card |
 | `/kkc close` | Close the open battle now |
 | `/kkc debug` | API and restriction report |
@@ -34,7 +35,7 @@ checkout links it instead; it's not tracked in git.)
 | File | Role |
 |---|---|
 | `Core.lua` | Helpers (secret-safe `readable`), names, Total RP 3 titles, saved data and migrations, event hub |
-| `Theme.lua` | The look per faction: war-table frames, parchment documents, the dark hall, buttons, bars |
+| `Theme.lua` | The look per faction: the book, the sheets (battle card, scribe window), the dark hall, buttons, bars |
 | `Tracker.lua` | Combat segments, honor kills, meter read, battles |
 | `Sync.lua` | Guild sync between guildies (rate-limited, off by default) |
 | `Report.lua` | Stats, notable / first-into-battle rules, report text, share line |
@@ -42,4 +43,6 @@ checkout links it instead; it's not tracked in git.)
 | `Summary.lua` | Chronicles over a period (day, week, calendar month, all time) |
 | `UI.lua` | Toast, battle card, copy box, notification rules |
 | `Hub.lua` | The Hall of the Kor'kron and its Legacy side tab |
+| `Minimap.lua` | The minimap button |
+| `Media/` | The addon's own textures (`tools/make_textures.py` makes them) |
 | `Commands.lua` | `/kkc` |

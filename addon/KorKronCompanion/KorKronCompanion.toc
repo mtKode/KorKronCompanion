@@ -16,4 +16,5 @@ Tracker.lua
 Sync.lua
 UI.lua
 Hub.lua
+Minimap.lua
 Commands.lua
