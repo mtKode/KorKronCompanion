@@ -53,7 +53,9 @@ local function build()
     ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
     b:SetScript("OnClick", function(_, mouse)
-        if mouse == "RightButton" then
+        if IsShiftKeyDown and IsShiftKeyDown() then
+            KKC.RollCall.ShowSheet()
+        elseif mouse == "RightButton" then
             SlashCmdList.KORKRONCOMPANION("card")
         else
             KKC.Hub.Toggle()
@@ -71,6 +73,7 @@ local function build()
         GameTooltip:SetText("Kor'kron Companion", 1, 0.82, 0)
         GameTooltip:AddLine("Left click: the Hall of the Kor'kron", 1, 1, 1)
         GameTooltip:AddLine("Right click: the latest battle report", 1, 1, 1)
+        GameTooltip:AddLine("Shift click: roll call (for a screenshot)", 1, 1, 1)
         GameTooltip:AddLine("Drag: move this button", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)

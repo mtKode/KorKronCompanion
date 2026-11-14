@@ -10,6 +10,7 @@
   /kkc notify off|quiet|toast|prompt     how you're told about a battle (default quiet: one chat line)
   /kkc all on|off      notify you even when you're not the initiator
   /kkc sync on|off     share battles with guildies over hidden guild messages (off by default)
+  /kkc rollcall        a roll call of the guild in your group now, on a sheet beside the raid panel (for Print Screen)
   /kkc minimap on|off  show or hide the minimap button (left click: the hall, right click: the latest report)
   /kkc ledger chat     your War Ledger totals in chat
   /kkc test            a made-up engagement to preview the toast, card and texts
@@ -117,6 +118,7 @@ commands.minimap = function(arg)
 end
 
 commands.hall = function() KKC.Hub.Toggle() end
+commands.rollcall = function() KKC.RollCall.ShowSheet() end
 for _, period in ipairs({ "day", "week", "lastweek", "month", "lastmonth" }) do
     commands[period] = function() KKC.Hub.Show("chronicle", period) end
 end

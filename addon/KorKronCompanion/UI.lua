@@ -165,7 +165,7 @@ end
 
 local function buildCard()
     -- 780 wide: Forever names are "First Surname", and a TRP3 title can come in front.
-    local f = panel("KorKronCompanionCard", CARD_W, 650, "Battle Report", "sheet")
+    local f = panel("KorKronCompanionCard", CARD_W, 680, "Battle Report", "sheet") -- room below the names for the foes' line
     f:SetPoint("CENTER", 0, 10)
 
     -- Everything stays inside the iron border (about 36 px on each side), and the place name starts below the
@@ -208,7 +208,10 @@ local function buildCard()
     end)
     f.foeRows = makeRows(f, right, CARD_W - right - 40, false, 64)
     f.foeLine = Theme.SheetText(f, 14, "CENTER")
-    f.foeLine:SetPoint("BOTTOM", 0, 166)
+    -- With many warriors the foes get a line of their own, set apart from the names by a rule.
+    f.foeRule = Theme.Rule(f, CARD_W - 260, true)
+    f.foeRule:SetPoint("BOTTOM", 0, 196)
+    f.foeLine:SetPoint("BOTTOM", 0, 170)
     f.foeLine:SetWidth(CARD_W - 80)
     f.foeLine:SetWordWrap(false)
 
@@ -293,7 +296,17 @@ local function fillCard(e)
 
     -- As many warriors as possible in one picture: 13 in one wide column (with TRP3 titles), 26 in two columns,
     -- 39 in three (names only). Past that the mouse wheel scrolls them.
+    local att = e.attendance -- outings only (Campaign.View)
     local members = KKC.sortedValues(e.members)
+    if att then
+        -- Who stayed longest first: the roll calls are the officers' proof of who was there.
+        table.sort(members, function(a, b)
+            local x, y = att.names[a.name], att.names[b.name]
+            local cx, cy = x and x.count or 0, y and y.count or 0
+            if cx ~= cy then return cx > cy end
+            return a.name < b.name
+        end)
+    end
     local many = s.members > ROWS
     local layouts = { card.wideRows, card.colRows, card.triRows }
     local use = s.members <= ROWS and 1 or (s.members <= 2 * ROWS and 2 or 3)
@@ -305,6 +318,7 @@ local function fillCard(e)
     for i = offset + 1, #members do shown[#shown + 1] = members[i] end
     local scrolls = #members > #rows
     card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members)
+        .. (att and (Theme.DIM .. ("   present at %d roll calls"):format(#att.calls) .. "|r") or "")
         .. (scrolls and (Theme.DIM .. ("   %d-%d, scroll for more"):format(offset + 1, offset + #rows - (#shown > #rows and 1 or 0)) .. "|r") or ""))
     setRows(rows, shown, function(m)
         local title = not many and KKC.rpTitle(m.name)
@@ -313,6 +327,13 @@ local function fillCard(e)
         if use == 3 then return l end
         local dmg = (m.dmg or 0) > 0 and KKC.shortNumber(m.dmg) or ""
         local mend = (m.heal or 0) > 0 and (Theme.LIGHT_MEND .. KKC.shortNumber(m.heal) .. " mend|r") or ""
+        if att then
+            -- Presence first; then mend for healers, damage for the rest.
+            local a = att.names[m.name]
+            local share = a and ((a.share >= 0.75 and Theme.GOOD or Theme.DIM) .. KKC.RollCall.Share(a) .. "|r")
+                or (Theme.DIM .. "-|r")
+            return l, share, (m.heal or 0) > (m.dmg or 0) and mend or dmg
+        end
         return l, dmg, mend
     end)
 
@@ -324,11 +345,13 @@ local function fillCard(e)
         for _, t in ipairs(tally) do parts[#parts + 1] = t.count .. " " .. t.label end
         card.enemiesHeader:SetText("")
         setRows(card.foeRows, {}, nil)
-        card.foeLine:SetText(Theme.DIM .. foes .. ":|r " .. Theme.Foe() .. (#parts > 0 and table.concat(parts, ", ") or "unknown")
+        card.foeRule:Show()
+        card.foeLine:SetText("|cffffd100" .. foes .. ":|r " .. Theme.Foe() .. (#parts > 0 and table.concat(parts, ", ") or "unknown")
             .. "|r  ~  " .. slain(s.kills))
     else
         card.enemiesHeader:SetText(foes)
         card.foeLine:SetText("")
+        card.foeRule:Hide()
         setRows(card.foeRows, tally, function(t)
             return Theme.Foe() .. t.count .. "|r  " .. Theme.LIGHT .. t.label .. "|r", nil,
                 t.kills > 0 and (SKULL .. (t.kills > 1 and (" x" .. t.kills) or "")) or ""

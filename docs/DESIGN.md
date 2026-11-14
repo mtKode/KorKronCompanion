@@ -132,6 +132,26 @@ asks for a screenshot of the raid panel with the clock about every 50 minutes.
 **Share to guild** (≤255 chars, one line, goes to Discord through the bridge if linked):
 `[Kor'kron] Tarren Mill held - 4 against 6 Alliance, 5 slain, Grukk fell in glory.`
 
+## Roll calls (RollCall.lua)
+
+Officers asked for a raid-panel screenshot about every 50 minutes as proof of who was there. The addon takes the same
+record itself: a roll call of the guild in your party or raid every 10 minutes, and when a fight starts and ends
+(not closer than 2 minutes to the last one). A guildmate counts as present only when online and in your zone
+(`GetRaidRosterInfo` zone and online flags; in a party, the same map): the raid panel can't tell someone fighting in
+Hillsbrad from someone idling in Orgrimmar. Someone present at the previous roll call and missing now gets a second
+look 90 seconds later, so leaving the raid for a moment and rejoining doesn't count as absent.
+
+An outing's roll calls (from 10 minutes before its first fight to 5 after its last) give each guildmate a share of
+roll calls present. Guildmates present at roll calls join the outing's warriors even if no fight came near them. The
+battle card sorts the warriors by attendance with the share in the first column; the report lists them the same way
+(`Kor'kron (24): Gargrim 100%, Ozzy 80%, ...`) and adds `Roll calls: 22:08 (16), 22:16 (24, screenshot), ...`.
+Single fights show no attendance (their roll calls are just their start and end).
+
+Addons can't take screenshots on this client, so `/kkc rollcall` (or shift click on the minimap button) takes a roll
+call now, shows it on a sheet beside the raid panel (opened when the client allows) and waits for Print Screen; the
+screenshot is then noted on that roll call. In a raid each automatic roll call also puts one line in chat, so a
+screenshot taken then matches the record. Roll calls are kept 120 days (`rollcalls` in the saved data).
+
 ## The Hall of the Kor'kron (Hub.lua)
 
 The main window (`/kkc`). Overlord style: dark parchment-textured panel in the faction's colors, war-table border,

@@ -6,7 +6,7 @@
 ]]
 
 local ADDON, KKC = ...
-KKC.VERSION = "0.1.0"
+KKC.VERSION = "0.2.0"
 KKC.GOLD = "|cffd4af37"
 KKC.GREY = "|cff9d9d9d"
 KKC.RED = "|cffff6060"
@@ -158,7 +158,9 @@ KKC.defaults = {
         notableEnemies = 2,     -- or this many enemy players
         campaignGap = 1800,     -- fights closer than this (seconds) are one campaign: one report for the outing
         minimap = { hide = false, angle = 200 }, -- the minimap button (Minimap.lua): hidden?, where on the edge (degrees)
+        rollcalls = true,       -- a roll call of the guild in your group every 10 minutes (RollCall.lua)
     },
+    rollcalls = {}, -- who of the guild was in your group when, newest first (RollCall.lua)
     log = {},   -- your engagements, newest first
     feed = {},  -- guildies' fights you weren't in, newest first
     ledger = {},

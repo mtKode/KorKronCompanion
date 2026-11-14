@@ -25,6 +25,7 @@ checkout links it instead; it's not tracked in git.)
 | `/kkc notify off\|quiet\|toast\|prompt` | How you're told about a battle (default `quiet`: one chat line) |
 | `/kkc all on\|off` | Tell you even when you weren't first into battle |
 | `/kkc sync on\|off` | Share battles with guildies (default off) |
+| `/kkc rollcall` | A roll call now on a sheet beside the raid panel, for a Print Screen (also shift click on the minimap button) |
 | `/kkc minimap on\|off` | Show or hide the minimap button (left click: the hall, right click: the latest report, drag to move) |
 | `/kkc test` | A made-up battle to preview the note and the card |
 | `/kkc close` | Close the open battle now |
@@ -43,6 +44,7 @@ checkout links it instead; it's not tracked in git.)
 | `Summary.lua` | Chronicles over a period (day, week, calendar month, all time) |
 | `UI.lua` | Toast, battle card, copy box, notification rules |
 | `Hub.lua` | The Hall of the Kor'kron and its Legacy side tab |
+| `RollCall.lua` | Roll calls of the guild in your group every 10 minutes, attendance per outing, the roll call sheet |
 | `Minimap.lua` | The minimap button |
 | `Media/` | The addon's own textures (`tools/make_textures.py` makes them) |
 | `Commands.lua` | `/kkc` |

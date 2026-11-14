@@ -231,7 +231,25 @@ function Report.CopyText(e, description)
         "Location: " .. location,
     }
     if e.campaign then lines[#lines + 1] = ("Clashes: %d"):format(e.fights) end
+    local att = e.attendance -- outings only (Campaign.View): a single fight's roll calls are just its start and end
+    if att then
+        -- Who stayed longest first, with how many of the roll calls they were present at.
+        local ranked, seen = {}, {}
+        for _, a in ipairs(KKC.RollCall.Ranked(att)) do
+            ranked[#ranked + 1] = a.name .. " " .. KKC.RollCall.Share(a)
+            seen[a.name] = true
+        end
+        for _, name in ipairs(members) do if not seen[name] then ranked[#ranked + 1] = name .. " (in a fight)" end end
+        members = ranked
+    end
     lines[#lines + 1] = ("Kor'kron (%d): %s"):format(s.members, table.concat(members, ", "))
+    if att then
+        local calls = {}
+        for _, c in ipairs(att.calls) do
+            calls[#calls + 1] = ("%s (%d%s)"):format(date("%H:%M", c.t), KKC.count(c.present), c.shot and ", screenshot" or "")
+        end
+        lines[#lines + 1] = "Roll calls: " .. table.concat(calls, ", ")
+    end
     if (e.allies or 0) > 0 then lines[#lines + 1] = ("Other allies: %d"):format(e.allies) end
     lines[#lines + 1] = ("Enemies: %d %s%s"):format(s.enemies, KKC.enemyFaction(), #foes > 0 and (" (" .. table.concat(foes, ", ") .. ")") or "")
     return table.concat(lines, "\n")

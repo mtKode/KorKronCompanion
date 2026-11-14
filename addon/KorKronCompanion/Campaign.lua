@@ -107,6 +107,10 @@ function Campaign.View(c)
         location[#location + 1] = #p.subs > 0 and (p.zone .. " - " .. table.concat(p.subs, ", ")) or p.zone
     end
     v.location = table.concat(location, "; ")
+    v.attendance = KKC.RollCall and KKC.RollCall.Attendance(v)
+    for name, a in pairs(v.attendance and v.attendance.names or {}) do
+        if not v.members[name] then v.members[name] = { name = name, class = a.class, dmg = 0, heal = 0, rollOnly = true } end
+    end
     return v
 end
 
