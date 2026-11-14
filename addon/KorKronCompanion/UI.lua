@@ -256,11 +256,31 @@ local function buildCard()
             function() UI.Share(f.engagement) end),
         button("Capture likeness", 160, "Hides these buttons for a few seconds: press Print Screen to save the card as proof of who fought.",
             function() UI.Screenshot() end),
-        button("Close", 120, nil, function() f:Hide() end),
+        button("Close", 110, nil, function() f:Hide() end),
     }
-    -- Centered row, clear of the bottom edge.
-    f.buttons[1]:SetPoint("BOTTOMLEFT", (CARD_W - 624) / 2, 26) -- 624 = the four buttons and their gaps
-    for i = 2, #f.buttons do f.buttons[i]:SetPoint("LEFT", f.buttons[i - 1], "RIGHT", 8, 0) end
+    -- Only on an outing with roll calls: the night roll call by roll call, in its own window.
+    f.rollButton = button("Roll calls", 130, "Each roll call of this outing: who was present, who joined, who left and who was away.",
+        function() if f.engagement then KKC.RollCall.ShowTimeline(f.engagement) end end)
+    table.insert(f.buttons, 4, f.rollButton)
+    -- A centered row, clear of the bottom edge, of the buttons this card has.
+    function f.layoutButtons()
+        local shown, width = {}, -8
+        for _, b in ipairs(f.buttons) do
+            if b ~= f.rollButton or f.hasRollCalls then
+                shown[#shown + 1] = b
+                width = width + (b:GetWidth() or 0) + 8
+            else
+                b:Hide()
+            end
+        end
+        for i, b in ipairs(shown) do
+            b:ClearAllPoints()
+            if i == 1 then b:SetPoint("BOTTOMLEFT", (CARD_W - width) / 2, 26) else b:SetPoint("LEFT", shown[i - 1], "RIGHT", 8, 0) end
+            b:Show()
+        end
+    end
+    for i, w in ipairs({ 150, 150, 160 }) do f.buttons[i]:SetWidth(w) end
+    f.layoutButtons()
     f.hint = Theme.SheetText(f, 13, "CENTER")
     f.hint:SetPoint("BOTTOM", 0, 34)
     f.hint:Hide()
@@ -293,6 +313,8 @@ local function fillCard(e)
             e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
     end
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
+    card.hasRollCalls = e.attendance ~= nil
+    if not card.capturing then card.layoutButtons() end
 
     -- As many warriors as possible in one picture: 13 in one wide column (with TRP3 titles), 26 in two columns,
     -- 39 in three (names only). Past that the mouse wheel scrolls them.
@@ -420,7 +442,7 @@ function UI.Screenshot()
     -- The hint itself would show in the picture: fade it out before the player presses the key.
     C_Timer.After(1.2, function() card.hint:Hide() end)
     C_Timer.After(CAPTURE_SECONDS, function()
-        for _, b in ipairs(card.buttons) do b:Show() end
+        card.layoutButtons()
         card.close:Show()
         card.capturing = false
     end)

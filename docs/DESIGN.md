@@ -145,7 +145,10 @@ An outing's roll calls (from 10 minutes before its first fight to 5 after its la
 roll calls present. Guildmates present at roll calls join the outing's warriors even if no fight came near them. The
 battle card sorts the warriors by attendance with the share in the first column; the report lists them the same way
 (`Kor'kron (24): Gargrim 100%, Ozzy 80%, ...`) and adds `Roll calls: 22:08 (16), 22:16 (24, screenshot), ...`.
-Single fights show no attendance (their roll calls are just their start and end).
+Single fights show no attendance (their roll calls are just their start and end). Behind a **Roll calls** button on an outing's
+card (shown only when it has roll calls) is the night roll call by roll call: the time, how many were present and
+whether a screenshot was taken, then who joined, who was gone and who was away (and where) since the roll call before,
+and at the end who was at every roll call and the others with their share.
 
 Addons can't take screenshots on this client, so `/kkc rollcall` (or shift click on the minimap button) takes a roll
 call now, shows it on a sheet beside the raid panel (opened when the client allows) and waits for Print Screen; the

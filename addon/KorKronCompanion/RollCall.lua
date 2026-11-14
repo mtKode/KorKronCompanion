@@ -13,6 +13,8 @@
     RollCall.For(e)            the roll calls during an engagement or campaign view (oldest first)
     RollCall.Attendance(e)     { calls, names = { [name] = { name, class, count, first, last, share } } } or nil
     RollCall.ShowSheet()       a roll call now, on a sheet beside the raid panel, ready for Print Screen
+    RollCall.Timeline(e)       an outing's roll calls one by one: who joined, who left, who was away (text)
+    RollCall.ShowTimeline(e)   that text in its own window (the Roll calls button on an outing's battle card)
 ]]
 
 local _, KKC = ...
@@ -183,6 +185,109 @@ function RollCall.Ranked(att)
         if a.count ~= b.count then return a.count > b.count end
         return a.name < b.name
     end)
+end
+
+-- ------------------------------------------------------------------------------------------------
+-- The timeline: an outing's roll calls one by one, for officers reviewing the night
+-- ------------------------------------------------------------------------------------------------
+
+local function names(set)
+    local out = {}
+    for name in pairs(set) do out[#out + 1] = name end
+    table.sort(out)
+    return table.concat(out, ", ")
+end
+
+-- "22:16  24 present (screenshot)" then who joined, who left and who was away since the roll call before.
+-- rich: colored for the window; plain otherwise.
+function RollCall.Timeline(e, rich)
+    local att = e.attendance or RollCall.Attendance(e)
+    if not att then return nil end
+    local T = KKC.Theme
+    local function c(color, text) return rich and (color .. text .. "|r") or text end
+    local lines, before = {}, nil
+    for _, call in ipairs(att.calls) do
+        local head = ("%s  %d present"):format(date("%H:%M", call.t), KKC.count(call.present))
+        if call.shot then head = head .. c(T.PLACE, "  (screenshot)") end
+        lines[#lines + 1] = c("|cffffd100", head)
+        if not before then
+            lines[#lines + 1] = "    " .. c(T.GOOD, "present: ") .. names(call.present)
+        else
+            local joined, left = {}, {}
+            for name in pairs(call.present) do if not before.present[name] then joined[name] = true end end
+            for name in pairs(before.present) do if not call.present[name] then left[name] = true end end
+            if next(joined) then lines[#lines + 1] = "    " .. c(T.GOOD, "joined: ") .. names(joined) end
+            if next(left) then lines[#lines + 1] = "    " .. c(T.BAD, "gone: ") .. names(left) end
+            if not (next(joined) or next(left)) then lines[#lines + 1] = "    " .. c(T.DIM, "no change") end
+        end
+        local away = {}
+        for name, where in pairs(call.away) do away[#away + 1] = name .. " (" .. where .. ")" end
+        table.sort(away)
+        if #away > 0 then lines[#lines + 1] = "    " .. c(T.DIM, "away: " .. table.concat(away, ", ")) end
+        before = call
+    end
+    -- Who was there the whole night, and the rest by share.
+    local all, part = {}, {}
+    for _, a in ipairs(RollCall.Ranked(att)) do
+        if a.count == #att.calls then all[#all + 1] = a.name else part[#part + 1] = a.name .. " " .. RollCall.Share(a) end
+    end
+    lines[#lines + 1] = ""
+    if #all > 0 then lines[#lines + 1] = c(T.GOOD, "At every roll call: ") .. table.concat(all, ", ") end
+    if #part > 0 then lines[#lines + 1] = c(T.DIM, "Part of the night: ") .. table.concat(part, ", ") end
+    return table.concat(lines, "\n")
+end
+
+local timeline
+function RollCall.ShowTimeline(e)
+    local text = RollCall.Timeline(e, true)
+    if not text then return KKC.say("no roll calls were taken during this outing.") end
+    local Theme = KKC.Theme
+    if not timeline then
+        local f = CreateFrame("Frame", "KorKronCompanionTimeline", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        f:SetSize(520, 560)
+        f:SetPoint("CENTER", 0, 20)
+        f:SetFrameStrata("FULLSCREEN_DIALOG") -- above the battle card it was opened from
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:SetClampedToScreen(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+        tinsert(UISpecialFrames, "KorKronCompanionTimeline")
+        f.title = Theme.SheetFrame(f, "Roll Calls")
+        f.sub = Theme.SheetText(f, 13, "CENTER")
+        f.sub:SetPoint("TOP", 0, -62)
+        f.sub:SetWidth(440)
+        local box = Theme.SheetPanel(f)
+        box:SetPoint("TOPLEFT", 36, -90)
+        box:SetPoint("BOTTOMRIGHT", -36, 72)
+        local scroll = CreateFrame("ScrollFrame", "KorKronCompanionTimelineScroll", box, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 10, -10)
+        scroll:SetPoint("BOTTOMRIGHT", -30, 10)
+        local body = CreateFrame("Frame", nil, scroll)
+        body:SetSize(400, 10)
+        scroll:SetScrollChild(body)
+        f.text = Theme.SheetText(body, 13)
+        f.text:SetPoint("TOPLEFT")
+        f.text:SetWidth(400)
+        f.text:SetSpacing(3)
+        f.body = body
+        local close = Theme.HallButton(f, "Close", 160, 32, nil, nil, function() f:Hide() end)
+        close.kkSheet = true
+        close:SetSelected(false)
+        close:SetPoint("BOTTOM", 0, 30)
+        local x = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        x:SetPoint("TOPRIGHT", -18, -18)
+        x:SetFrameLevel(f:GetFrameLevel() + 10)
+        x:SetScript("OnClick", function() f:Hide() end)
+        timeline = f
+    end
+    local att = e.attendance or RollCall.Attendance(e)
+    timeline.sub:SetText(Theme.DIM .. KKC.Report.Place(e) .. "  ~  " .. date("%A %d %B, %H:%M", e.start) .. " - "
+        .. date("%H:%M", e.stop or e.start) .. "  ~  " .. #att.calls .. " roll calls|r")
+    timeline.text:SetText(text)
+    timeline.body:SetHeight(math.max(10, (timeline.text:GetStringHeight() or 0) + 10))
+    timeline:Show()
 end
 
 -- ------------------------------------------------------------------------------------------------
