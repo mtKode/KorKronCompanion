@@ -6,7 +6,7 @@
 ]]
 
 local ADDON, KKC = ...
-KKC.VERSION = "0.2.0"
+KKC.VERSION = "0.3.0"
 KKC.GOLD = "|cffd4af37"
 KKC.GREY = "|cff9d9d9d"
 KKC.RED = "|cffff6060"
