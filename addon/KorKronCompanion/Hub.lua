@@ -194,8 +194,13 @@ local function battleRow(parent, width)
     b.when:SetWordWrap(false)
     b.what = Theme.LightText(b, 12)
     b.what:SetPoint("LEFT", 70, 0)
-    b.what:SetPoint("RIGHT", -4, 0)
+    b.what:SetPoint("RIGHT", -20, 0)
     b.what:SetWordWrap(false)
+    -- A small arrow at the end of each battle: it opens something (gold under the mouse).
+    b.arrow = Theme.LightText(b, 14, "RIGHT", false, true)
+    b.arrow:SetPoint("RIGHT", -5, 0)
+    b.arrow:SetText(">")
+    b.arrow:SetTextColor(0.70, 0.62, 0.48)
     -- A day's heading in the diary: a diamond and the date.
     b.diamond = b:CreateTexture(nil, "ARTWORK")
     b.diamond:SetSize(7, 7)
@@ -214,11 +219,34 @@ local function battleRow(parent, width)
     b.card:SetPoint("BOTTOMRIGHT", 0, -1)
     b.card:SetColorTexture(0.24, 0.17, 0.10, 0.95)
     b:SetScript("OnClick", function(self) if self.engagement then KKC.UI.ShowCard(self.engagement) end end)
+    -- What a click opens, under the mouse.
+    b:SetScript("OnEnter", function(self)
+        local e = self.engagement
+        if not e then return end
+        self.arrow:SetTextColor(1, 0.82, 0)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(e.campaign and (KKC.Campaign.Name(e) .. ": " .. KKC.Report.Place(e)) or KKC.Report.Place(e), 1, 0.82, 0)
+        if e.campaign then
+            GameTooltip:AddLine("Click: the battle card for the whole outing, one report for the night (with its roll calls).", 1, 1, 1, true)
+        elseif self.inCampaign then
+            GameTooltip:AddLine("Click: the battle card for just this fight. The row above it is the whole outing.", 1, 1, 1, true)
+        else
+            GameTooltip:AddLine("Click: the battle card for this fight.", 1, 1, 1, true)
+        end
+        GameTooltip:AddLine("On the card: Scribe report copies the report text, Capture likeness is for the screenshot.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function(self)
+        self.arrow:SetTextColor(0.70, 0.62, 0.48)
+        GameTooltip:Hide()
+    end)
     -- A diary line: the time, then the battle. inCampaign: a fight under its campaign, indented. day: instead a day's
     -- heading ("WEDNESDAY 11 NOVEMBER").
     function b:Set(e, inCampaign, day)
-        self.engagement = e
+        self.engagement, self.inCampaign = e, inCampaign
         if not (e or day) then return self:Hide() end
+        self:EnableMouse(e ~= nil) -- a day's heading isn't clickable, so it doesn't light up either
+        self.arrow:SetShown(e ~= nil)
         local card = e and e.campaign and Theme.book
         for _, t in ipairs({ self.card, self.shadow }) do t:SetShown(card or false) end
         self.diamond:SetShown(day ~= nil)
@@ -396,6 +424,9 @@ local function buildBattles(parent)
 
     scrollable(box, p)
     p.box = box
+    -- Above the list in the book: the rows are what you click.
+    p.hint = Theme.LightText(p, 12, "LEFT")
+    dim(p.hint, "Click a battle to open its battle card. A campaign row opens the whole outing.")
     p.newer = Theme.HallButton(p, "< Newer", 100, 26, nil, nil, function() p.offset = p.offset - (p.visible or 10); p:Refresh() end)
     p.older = Theme.HallButton(p, "Older >", 100, 26, nil, nil, function() p.offset = p.offset + (p.visible or 10); p:Refresh() end)
     p.older:SetPoint("LEFT", p.newer, "RIGHT", 8, 0)
@@ -414,7 +445,9 @@ local function buildBattles(parent)
         layoutPeriods(self, book, side, -52)
         self.box:ClearAllPoints()
         if book then
-            self.box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -4)
+            at(self.hint, "TOPLEFT", self, "TOPLEFT", 4, -4)
+            self.hint:Show()
+            self.box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -22)
             self.box:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 4)
             -- Bottom row, like the periods: newer, older, skirmishes; where you are in the list just above.
             for i, b in ipairs({ self.newer, self.older, self.minor }) do
@@ -425,6 +458,7 @@ local function buildBattles(parent)
             self.pageText:SetJustifyH("CENTER")
             at(self.tally, "TOPLEFT", side, "TOPLEFT", 0, -126)
         else
+            self.hint:Hide() -- docked, the line under the heading says it
             for _, b in ipairs({ self.newer, self.older }) do b:SetSize(100, 26) end
             self.minor:SetSize(150, 26)
             at(self.older, "LEFT", self.newer, "RIGHT", 8, 0)
@@ -492,7 +526,7 @@ local function buildBattles(parent)
             { "Foes slain, at least", Theme.GOOD .. slain .. "|r" },
             { "Kor'kron fallen", Theme.BAD .. fallen .. "|r" },
         })
-        self.sub:SetText(Theme.DIM .. (#list > 0 and ("%d battles. Click one to read its report, or a campaign for the whole outing."):format(battles)
+        self.sub:SetText(Theme.DIM .. (#list > 0 and ("%d battles. Click one in the list to open its battle card; a campaign row opens the whole outing."):format(battles)
             or "No battles in this time. The blades stay sheathed... for now.") .. "|r")
     end
     return p
