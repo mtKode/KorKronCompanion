@@ -39,6 +39,17 @@ function KKC.readableTable(t)
     return KKC.readable(t)
 end
 
+-- The first n bytes of s, never ending inside a UTF-8 character ("Järnlykta"): chat refuses broken text.
+function KKC.utf8cut(s, n)
+    if #s <= n then return s end
+    local b = s:byte(n + 1)
+    while n > 0 and b and b >= 0x80 and b < 0xC0 do
+        n = n - 1
+        b = s:byte(n + 1)
+    end
+    return s:sub(1, n)
+end
+
 function KKC.say(msg) DEFAULT_CHAT_FRAME:AddMessage(KKC.GOLD .. "Kor'kron|r: " .. tostring(msg)) end
 
 -- Keep values on one line and free of the sync separator.

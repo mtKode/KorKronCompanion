@@ -132,6 +132,22 @@ asks for a screenshot of the raid panel with the clock about every 50 minutes.
 **Share to guild** (≤255 chars, one line, goes to Discord through the bridge if linked):
 `[Kor'kron] Tarren Mill held - 4 against 6 Alliance, 5 slain, Grukk fell in glory.`
 
+**The whole report in chat** (copy box: *Guild chat* / *Officer chat*, click twice): the report's fields packed into
+numbered chat lines of at most 250 bytes, so the guild's Discord bridge carries the full report (`Report.ChatLines`).
+Empty template fields are left out, short fields share a line, and the Kor'kron list goes on over as many lines as it
+needs, cut between names and never inside a UTF-8 character. A typical outing is 2-3 lines; 45 warriors are 9.
+
+```
+[Report 1/3] Date: 2026-11-12; Start time: 21:40; Duration: 12m; Short description: Clashed with 6 Alliance at Tarren Mill.
+[Report 2/3] Kills (approximate): at least 5; Main leader: Grukk; ...; Kor'kron (4): Grukk, Ozzy, Zhara, Morth
+[Report 3/3] Enemies: 6 Alliance (3 Human, 2 Dwarf, 1 Gnome)
+```
+
+The first line goes with the click, the rest one every 1.5 seconds (no flood; the bridge keeps the order). If the
+client blocks a timed chat send (`ADDON_ACTION_BLOCKED`), the button turns into *Next line n/N* and each click sends
+one. Officer chat needs officer chat rights and reaches Discord only if the bridge is set to read it. A report already
+posted to a channel asks *Again?* first (`posted` on the battle, or the outing's first fight).
+
 ## Roll calls (RollCall.lua)
 
 Officers asked for a raid-panel screenshot about every 50 minutes as proof of who was there. The addon takes the same

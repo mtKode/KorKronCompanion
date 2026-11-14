@@ -204,7 +204,7 @@ function Summary.ShareLine(s, label)
     for k, v in pairs(s.places) do if not count or v > count then place, count = k, v end end
     if place and count > 1 then line = line .. (" Most blood spilled at %s (%d)."):format(place, count) end
     if s.kills > 0 then line = line .. " Lok'tar ogar!" end
-    if #line > 255 then line = line:sub(1, 252) .. "..." end
+    if #line > 255 then line = KKC.utf8cut(line, 252) .. "..." end
     return line
 end
 

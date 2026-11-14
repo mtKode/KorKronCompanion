@@ -7,7 +7,7 @@
   addon just shares its data, and they can open the card from /kkc log.
 ]]
 
-local _, KKC = ...
+local ADDON, KKC = ...
 local UI = {}
 KKC.UI = UI
 local Theme = KKC.Theme
@@ -47,7 +47,7 @@ end
 -- ------------------------------------------------------------------------------------------------
 
 local copyFrame
-function UI.ShowCopy(body, title, hint)
+function UI.ShowCopy(body, title, hint, post)
     if not copyFrame then
         -- Dark like the hall's book: light text on a dark page reads well, and it's what you copy from.
         local f = panel("KorKronCompanionCopy", 580, 440, nil, "sheet")
@@ -71,7 +71,20 @@ function UI.ShowCopy(body, title, hint)
         local done = Theme.HallButton(f, "Close", 160, 32, nil, nil, function() f:Hide() end)
         done.kkSheet = true
         done:SetSelected(false)
-        done:SetPoint("BOTTOM", 0, 30)
+        f.done = done
+        -- A battle report can also go to guild or officer chat, line by line, for the guild's Discord bridge.
+        local function postButton(label, channel, tip)
+            local b
+            b = Theme.HallButton(f, label, 150, 32, nil, tip, function() UI.PostClick(b) end)
+            b.kkSheet = true
+            b:SetSelected(false)
+            b.baseLabel, b.channel = label, channel
+            return b
+        end
+        f.guildPost = postButton("Guild chat", "GUILD",
+            "Post the report in guild chat, a line every 1.5 seconds (your guild's Discord bridge passes it on). Click twice.")
+        f.officerPost = postButton("Officer chat", "OFFICER",
+            "Post the report in officer chat, a line every 1.5 seconds. Needs officer chat rights; reaches Discord only if the bridge reads officer chat. Click twice.")
         local edit = CreateFrame("EditBox", nil, scroll)
         edit:SetMultiLine(true)
         edit:SetAutoFocus(true)
@@ -92,6 +105,29 @@ function UI.ShowCopy(body, title, hint)
         copyFrame = f
     end
     copyFrame.body = body
+    -- post: the battle (or outing) whose report this is; it can go to chat. Otherwise only Close.
+    local f = copyFrame
+    f.post = post
+    f.lines = post and KKC.Report.ChatLines(post)
+    f.done:ClearAllPoints()
+    if post then
+        f.guildPost:SetPoint("BOTTOMLEFT", (580 - 426) / 2, 30) -- 150 + 150 + 110 and two gaps of 8
+        f.officerPost:SetPoint("LEFT", f.guildPost, "RIGHT", 8, 0)
+        f.done:SetWidth(110)
+        f.done:SetPoint("LEFT", f.officerPost, "RIGHT", 8, 0)
+        local can = not post.feed and not post.test -- only your own, real battles
+        for _, b in ipairs({ f.guildPost, f.officerPost }) do
+            b.armed = nil
+            if not (UI.posting and UI.posting.button == b) then b:SetLabel(b.baseLabel) end
+            b:SetEnabled(can)
+            b:Show()
+        end
+    else
+        f.guildPost:Hide()
+        f.officerPost:Hide()
+        f.done:SetWidth(160)
+        f.done:SetPoint("BOTTOM", 0, 30)
+    end
     copyFrame.title:SetText(title or "Battle Report")
     copyFrame.hint:SetText(hint or "Press Ctrl+C, then paste it into the battle report post.")
     copyFrame.edit:SetText(body)
@@ -405,7 +441,7 @@ end)
 function UI.CopyReport(e)
     if not e then return end
     UI.ShowCopy(KKC.Report.CopyText(e, e.description), (e.campaign and KKC.Campaign.Name(e) or "Battle") .. " Report",
-        "Ctrl+C, then paste it into the post. Title: your main's name and surname. Attach the captured likeness of the card.")
+        "Ctrl+C, then paste it into the post (title: your main's name and surname, attach the card's likeness). Or post it in guild or officer chat for the Discord bridge.", e)
 end
 
 function UI.Share(e)
@@ -425,6 +461,87 @@ function UI.SendGuild(line)
     local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
     send(line, "GUILD")
     return true
+end
+
+-- ------------------------------------------------------------------------------------------------
+-- Posting a report to guild or officer chat, a line at a time
+-- ------------------------------------------------------------------------------------------------
+
+local LINE_GAP = 1.5 -- seconds between lines: no flood, and the bridge keeps them in order
+local CHANNEL_NAME = { GUILD = "guild", OFFICER = "officer" }
+
+local function postStep(p)
+    local b = p.button
+    if p.done then
+        b:SetLabel("Posted")
+    elseif p.manual then
+        b:SetLabel(("Next line %d/%d"):format(p.i + 1, #p.lines))
+    else
+        b:SetLabel(("Posting %d/%d"):format(p.i, #p.lines))
+    end
+end
+
+-- Sends the next line; times the one after unless the game made us go by clicks.
+function UI.PostNext()
+    local p = UI.posting
+    if not p then return end
+    if C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown) then
+        -- Chat is silenced for a moment (an encounter): try again shortly.
+        if not p.manual then C_Timer.After(LINE_GAP * 2, function() if UI.posting == p then UI.PostNext() end end) end
+        return
+    end
+    p.i = p.i + 1
+    local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+    send(p.lines[p.i], p.channel)
+    if p.i >= #p.lines then
+        p.done = true
+        UI.posting = nil
+        local holder = p.engagement.campaign and p.engagement.anchor or p.engagement
+        holder.posted = holder.posted or {}
+        holder.posted[p.channel] = true
+        KKC.say(("the report is posted in %s chat (%d lines)."):format(CHANNEL_NAME[p.channel], #p.lines))
+    elseif not p.manual then
+        C_Timer.After(LINE_GAP, function() if UI.posting == p and not p.manual then UI.PostNext() end end)
+    end
+    postStep(p)
+end
+
+-- If this client won't let a timer send chat, the line didn't go out: the rest go one per click.
+local function onBlocked(culprit, func)
+    local p = UI.posting
+    if p and not p.manual and type(culprit) == "string" and culprit:find(ADDON, 1, true)
+        and tostring(func):find("SendChatMessage", 1, true) then
+        p.manual = true
+        p.i = math.max(0, p.i - 1)
+        postStep(p)
+        KKC.say("the game wants a click for each line: press the button for the next one.")
+    end
+end
+KKC.On("ADDON_ACTION_BLOCKED", onBlocked)
+KKC.On("ADDON_ACTION_FORBIDDEN", onBlocked)
+
+-- A click on Guild chat / Officer chat in the copy window: the first arms it, the second posts.
+function UI.PostClick(b)
+    local p, f = UI.posting, copyFrame
+    if p then
+        if p.button == b and p.manual then return UI.PostNext() end
+        return KKC.say("still posting the last report.")
+    end
+    if not (f and f.post and f.lines and #f.lines > 0) then return end
+    if not IsInGuild() then return KKC.say("you march with no guild.") end
+    if not b.armed then
+        local holder = f.post.campaign and f.post.anchor or f.post
+        local again = holder.posted and holder.posted[b.channel]
+        b.armed = true
+        b:SetLabel((again and "Again? %d lines" or "Post %d lines?"):format(#f.lines))
+        C_Timer.After(4, function()
+            if b.armed then b.armed = nil; b:SetLabel(b.baseLabel) end
+        end)
+        return
+    end
+    b.armed = nil
+    UI.posting = { lines = f.lines, i = 0, channel = b.channel, button = b, engagement = f.post }
+    UI.PostNext() -- the first line goes with the click itself
 end
 
 -- Hide the buttons for a few seconds so a Print Screen shows only the card. Addons may not take screenshots

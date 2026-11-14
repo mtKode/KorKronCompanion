@@ -43,7 +43,7 @@ checkout links it instead; it's not tracked in git.)
 | `Report.lua` | Stats, notable / first-into-battle rules, report text, share line |
 | `Ledger.lua` | Per-character kill totals and the War Ledger challenge tracks |
 | `Summary.lua` | Chronicles over a period (day, week, calendar month, all time) |
-| `UI.lua` | Toast, battle card, copy box, notification rules |
+| `UI.lua` | Toast, battle card, copy box (and posting the report to guild / officer chat), notification rules |
 | `Hub.lua` | The Hall of the Kor'kron and its Legacy side tab |
 | `RollCall.lua` | Roll calls of the guild in your group every 10 minutes, attendance per outing, the roll call sheet |
 | `Minimap.lua` | The minimap button |

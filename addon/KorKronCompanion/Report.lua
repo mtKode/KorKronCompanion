@@ -269,8 +269,54 @@ function Report.ShareLine(e)
         line = ("[Kor'kron] Skirmish at %s - %d against %d %s."):format(place, s.members, s.enemies, faction)
     end
     if s.kills > 0 then line = line .. pick(e, { " Lok'tar ogar!", " Blood and thunder!", " For the Horde!" }) end
-    if #line > 255 then line = line:sub(1, 252) .. "..." end
+    if #line > 255 then line = KKC.utf8cut(line, 252) .. "..." end
     return line
+end
+
+-- The whole report for guild or officer chat (and Discord through the guild's bridge): the fields of CopyText in
+-- chat lines of at most 250 bytes (the server allows 255), numbered "[Report 2/6] ...". Empty template fields are
+-- left out, short fields share a line, a long one (the Kor'kron) goes on in the next line.
+local CHAT_MAX = 250
+function Report.ChatLines(e)
+    local fields = {}
+    for line in (Report.CopyText(e, e.description) .. "\n"):gmatch("(.-)\n") do
+        line = line:gsub("|", "/") -- a lone | is an escape code in chat; the server refuses broken ones
+        local value = line:match("^[^:]+:%s*(.-)%s*$")
+        if line ~= "" and value ~= "" then fields[#fields + 1] = line end
+    end
+    local room = CHAT_MAX - 16 -- "[Report 12/12] "
+    local out, cur = {}, nil
+    for _, f in ipairs(fields) do
+        if cur and #cur + 2 + #f <= room then
+            cur = cur .. "; " .. f
+        else
+            if cur then out[#out + 1] = cur end
+            local label = f:match("^([^:]+):") or ""
+            if #label > 40 then label = "" end
+            while #f > room do
+                -- Cut after the last ", " that fits (between names), else the last space, else anywhere.
+                local head, piece, rest = f:sub(1, room), nil, nil
+                local at = head:match(".*(), ")
+                if at and at > room / 2 then
+                    piece, rest = f:sub(1, at - 1), f:sub(at + 2)
+                else
+                    at = head:match(".*() ")
+                    if at and at > room / 2 then
+                        piece, rest = f:sub(1, at - 1), f:sub(at + 1)
+                    else
+                        piece = KKC.utf8cut(f, room)
+                        rest = f:sub(#piece + 1)
+                    end
+                end
+                out[#out + 1] = piece
+                f = (label ~= "" and (label .. " (cont.): ") or "") .. rest
+            end
+            cur = f
+        end
+    end
+    if cur then out[#out + 1] = cur end
+    for i, l in ipairs(out) do out[i] = ("[Report %d/%d] %s"):format(i, #out, l) end
+    return out
 end
 
 -- Short summary for the toast and chat.
