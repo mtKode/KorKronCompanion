@@ -231,7 +231,9 @@ function Report.CopyText(e, description)
         "Location: " .. location,
     }
     if e.campaign then lines[#lines + 1] = ("Clashes: %d"):format(e.fights) end
-    local att = e.attendance -- outings only (Campaign.View): a single fight's roll calls are just its start and end
+    -- Outings only (Campaign.View): a single fight's roll calls are just its start and end. Off by default: the
+    -- roll calls are on the battle card (Roll calls button), and the text stays short enough for one Discord message.
+    local att = KKC.settings().rollcallsInReport and e.attendance
     if att then
         -- Who stayed longest first, with how many of the roll calls they were present at.
         local ranked, seen = {}, {}

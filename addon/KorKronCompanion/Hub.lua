@@ -5,7 +5,7 @@
     Battles         every battle you fought, newest first; click one for its battle card
     From the field  guildies' battles you weren't in (the guild feed; needs guild sync)
     War Ledger      your deeds as tiered challenges, Legacy style
-    Settings        notifications, guild sync, a test battle, diagnostics
+    Settings        notifications, guild sync, roll calls in the report, a test battle, diagnostics
 
   One frame, two places: on its own (/kkc), or docked inside Forever's Legacy window behind our own side tab. When
   docked it is simply laid over the Legacy content; Blizzard's frames are never changed, only hooked (HookScript), so
@@ -671,6 +671,10 @@ local function buildSettings(parent)
         KKC.settings().sync = not KKC.settings().sync
         p:Refresh()
     end)
+    p.rollReport = row("Roll calls in the report", "Change", function()
+        KKC.settings().rollcallsInReport = not KKC.settings().rollcallsInReport
+        p:Refresh()
+    end)
     p.test = row("A test battle", "Show test battle", function() SlashCmdList.KORKRONCOMPANION("test") end)
     dim(p.test.text, "A made-up battle at Tarren Mill, to see the note and the battle card without a fight.")
     p.debug = row("Diagnostics", "Print to chat", function() SlashCmdList.KORKRONCOMPANION("debug") end)
@@ -702,6 +706,11 @@ local function buildSettings(parent)
             or "Off: nothing is sent or read. Battles stay in your own chronicle.") .. "|r")
         self.sync.button:SetLabel(set.sync and "On" or "Off")
         self.sync.button:SetSelected(set.sync)
+        self.rollReport.text:SetText(Theme.DIM .. (set.rollcallsInReport
+            and "On: the report text ranks the Kor'kron by roll calls (Name 100%) and lists each roll call. Longer to paste."
+            or "Off: the report text lists the Kor'kron by name. Roll calls stay on the battle card.") .. "|r")
+        self.rollReport.button:SetLabel(set.rollcallsInReport and "On" or "Off")
+        self.rollReport.button:SetSelected(set.rollcallsInReport)
     end
     return p
 end

@@ -26,6 +26,7 @@ checkout links it instead; it's not tracked in git.)
 | `/kkc all on\|off` | Tell you even when you weren't first into battle |
 | `/kkc sync on\|off` | Share battles with guildies (default off) |
 | `/kkc rollcall` | A roll call now on a sheet beside the raid panel, for a Print Screen (also shift click on the minimap button) |
+| `/kkc rollcall report on\|off` | Roll calls in the report text too (off by default; they're always on the battle card) |
 | `/kkc minimap on\|off` | Show or hide the minimap button (left click: the hall, right click: the latest report, drag to move) |
 | `/kkc test` | A made-up battle to preview the note and the card |
 | `/kkc close` | Close the open battle now |
