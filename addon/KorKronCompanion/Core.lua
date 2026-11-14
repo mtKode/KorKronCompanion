@@ -287,6 +287,28 @@ hub:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
+-- Everyone in your guild by name, from the guild roster: tells a guildmate when the unit can't (outside your group,
+-- or the guild flag unreadable). Asked for at login; the game sends updates as people come and go.
+local guildNames = {}
+local function readRoster()
+    local n = KKC.try(GetNumGuildMembers)
+    if not (KKC.readable(n) and type(n) == "number" and n > 0) then return end
+    local names = {}
+    for i = 1, n do
+        local name = KKC.try(GetGuildRosterInfo, i)
+        if KKC.readable(name) and type(name) == "string" then
+            local short = KKC.short(name)
+            if short then names[short] = true end
+        end
+    end
+    guildNames = names
+end
+function KKC.IsGuildmate(name) return name ~= nil and guildNames[name] == true end
+KKC.On("GUILD_ROSTER_UPDATE", readRoster)
+KKC.On("PLAYER_ENTERING_WORLD", function()
+    if IsInGuild() then KKC.try((C_GuildInfo and C_GuildInfo.GuildRoster) or GuildRoster) end
+end)
+
 -- Internal callbacks between modules ("EngagementClosed", "EngagementUpdated", ...).
 local callbacks = {}
 function KKC.Listen(name, fn)

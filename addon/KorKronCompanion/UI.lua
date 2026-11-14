@@ -298,13 +298,22 @@ local function buildCard()
     f.rollButton = button("Roll calls", 130, "Each roll call of this outing: who was present, who joined, who left and who was away.",
         function() if f.engagement then KKC.RollCall.ShowTimeline(f.engagement) end end)
     table.insert(f.buttons, 4, f.rollButton)
+    -- Only when other raids at the same battle reported (guild sync): the whole host, raid by raid.
+    f.hostButton = button("Sync report", 130, "The synchronization report: every raid of the guild at this battle, from their guildies' addons (guild sync). Your own report stays your raid's.",
+        function() if f.engagement then UI.ShowHost(f.engagement) end end)
+    table.insert(f.buttons, 5, f.hostButton)
+    -- Full and narrower widths: with both Roll calls and Sync report the row must still fit the card.
+    local WIDTHS = { 150, 150, 160, 130, 130, 110 }
+    local NARROW = { 126, 128, 140, 104, 110, 80 }
     -- A centered row, clear of the bottom edge, of the buttons this card has.
     function f.layoutButtons()
         local shown, width = {}, -8
-        for _, b in ipairs(f.buttons) do
-            if b ~= f.rollButton or f.hasRollCalls then
+        local narrow = f.hasRollCalls and f.hasHost
+        for i, b in ipairs(f.buttons) do
+            if (b ~= f.rollButton or f.hasRollCalls) and (b ~= f.hostButton or f.hasHost) then
+                b:SetWidth(narrow and NARROW[i] or WIDTHS[i])
                 shown[#shown + 1] = b
-                width = width + (b:GetWidth() or 0) + 8
+                width = width + (narrow and NARROW[i] or WIDTHS[i]) + 8
             else
                 b:Hide()
             end
@@ -315,7 +324,6 @@ local function buildCard()
             b:Show()
         end
     end
-    for i, w in ipairs({ 150, 150, 160 }) do f.buttons[i]:SetWidth(w) end
     f.layoutButtons()
     f.hint = Theme.SheetText(f, 13, "CENTER")
     f.hint:SetPoint("BOTTOM", 0, 34)
@@ -337,19 +345,28 @@ local function fillCard(e)
     local where = (not e.campaign and e.subzone ~= "" and e.subzone ~= e.zone) and (e.zone .. ", ") or ""
     card.when:SetText(Theme.DIM .. where .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start) .. "|r")
     local leaders = KKC.Leaders(e)
-    local led = #leaders > 0 and ("  ~  Led by " .. table.concat(leaders, ", ")) or ""
+    local led = #leaders > 0 and ("Led by " .. table.concat(leaders, ", ")) or ""
+    -- First into battle only when the addon can tell (guild sync reports, or you alone); else just the leaders.
+    local firstIn = KKC.KnownInitiator(e)
+    local function opening(extra)
+        local parts = {}
+        if firstIn then parts[#parts + 1] = "First into battle: " .. firstIn end
+        if led ~= "" then parts[#parts + 1] = led end
+        if extra then parts[#parts + 1] = extra end
+        return table.concat(parts, "  ~  ")
+    end
     if e.campaign then
         card.size:SetText(("%d clashes  ~  %d against %s  ~  %s of battle  ~  %s"):format(
             e.fights, s.members, Theme.Foe() .. s.enemies .. "|r", KKC.duration(e.pvpSeconds), slain(s.kills)))
-        card.first:SetText("First into battle: " .. (KKC.Initiator(e) or "?") .. led)
+        card.first:SetText(opening())
     else
         card.size:SetText(("%d against %s  ~  %s of battle  ~  %s"):format(
             s.members, Theme.Foe() .. s.enemies .. "|r", KKC.duration(e.pvpSeconds), slain(s.kills)))
-        card.first:SetText(("First into battle: %s%s%s"):format(KKC.Initiator(e) or "?", led,
-            e.test and "  ~  (a test)" or (e.feed and "  ~  word from the field" or "")))
+        card.first:SetText(opening(e.test and "(a test)" or (e.feed and "word from the field" or nil)))
     end
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
     card.hasRollCalls = e.attendance ~= nil
+    card.hasHost = KKC.Host(e) ~= nil
     if not card.capturing then card.layoutButtons() end
 
     -- As many warriors as possible in one picture: 13 in one wide column (with TRP3 titles), 26 in two columns,
@@ -542,6 +559,59 @@ function UI.PostClick(b)
     b.armed = nil
     UI.posting = { lines = f.lines, i = 0, channel = b.channel, button = b, engagement = f.post }
     UI.PostNext() -- the first line goes with the click itself
+end
+
+-- ------------------------------------------------------------------------------------------------
+-- Synchronization report: every raid of the guild at one battle (guild sync)
+-- ------------------------------------------------------------------------------------------------
+
+local hostFrame
+function UI.ShowHost(e)
+    local text = KKC.HostText(e, true)
+    if not text then return KKC.say("no other raid reported this battle (that needs guild sync and the addon in each raid).") end
+    if not hostFrame then
+        local f = panel("KorKronCompanionHost", 560, 600, nil, "sheet")
+        f:SetPoint("CENTER", 0, 20)
+        f:SetFrameStrata("FULLSCREEN_DIALOG") -- above the battle card it was opened from
+        f.heading = Theme.SheetTitle(f, 22, "CENTER")
+        f.heading:SetPoint("TOP", 0, -32)
+        f.sub = Theme.SheetText(f, 12, "CENTER")
+        f.sub:SetPoint("TOP", f.heading, "BOTTOM", 0, -6)
+        f.sub:SetWidth(470)
+        local box = Theme.SheetPanel(f)
+        box:SetPoint("TOPLEFT", 36, -96)
+        box:SetPoint("BOTTOMRIGHT", -36, 72)
+        local scroll = CreateFrame("ScrollFrame", "KorKronCompanionHostScroll", box, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 10, -10)
+        scroll:SetPoint("BOTTOMRIGHT", -30, 10)
+        local body = CreateFrame("Frame", nil, scroll)
+        body:SetSize(440, 10)
+        scroll:SetScrollChild(body)
+        f.text = Theme.SheetText(body, 13)
+        f.text:SetPoint("TOPLEFT")
+        f.text:SetWidth(440)
+        f.text:SetSpacing(3)
+        f.body = body
+        local copy = Theme.HallButton(f, "Copy text", 160, 32, nil, "The synchronization report as text, to paste where the guild keeps its stats.",
+            function() if f.engagement then
+                UI.ShowCopy((KKC.HostText(f.engagement, false)), f.heading:GetText(), "Ctrl+C, then paste it wherever the guild keeps its tallies.")
+            end end)
+        copy.kkSheet = true
+        copy:SetSelected(false)
+        copy:SetPoint("BOTTOMRIGHT", f, "BOTTOM", -4, 30)
+        local done = Theme.HallButton(f, "Close", 160, 32, nil, nil, function() f:Hide() end)
+        done.kkSheet = true
+        done:SetSelected(false)
+        done:SetPoint("BOTTOMLEFT", f, "BOTTOM", 4, 30)
+        hostFrame = f
+    end
+    local f = hostFrame
+    f.engagement = e
+    f.heading:SetText(e.campaign and "Campaign Synchronization Report" or "Battle Synchronization Report")
+    f.sub:SetText(Theme.DIM .. "Every raid of the guild at this battle, from their guildies' addons. Your battle report stays your own raid's.|r")
+    f.text:SetText(text)
+    f.body:SetHeight(math.max(10, (f.text:GetStringHeight() or 0) + 10))
+    f:Show()
 end
 
 -- Hide the buttons for a few seconds so a Print Screen shows only the card. Addons may not take screenshots

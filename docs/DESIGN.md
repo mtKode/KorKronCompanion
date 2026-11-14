@@ -44,10 +44,17 @@ who fought (meter, sightings, sync) and damage/healing totals (meter). The battl
 - **First into battle**: the guildie whose engagement started first (ties: alphabetical). They're named in the
   reports and are the only one prompted by default. This is *not* the guild's event initiator, who gathered the group
   in Discord; the addon can't know that, and the report is posted by hand anyway. (In code: `KKC.Initiator`.)
-- **Members and leaders**: when each segment ends, the group is read once. Every guildie in the party or raid is a
-  member, near you or not: the meter and kill events only see what happens close to you, and a guildie at the far end
-  of the camp must still be on the report. Their damage and healing show when the meter caught them. Non-guild group
-  members are only counted. Whoever is party or raid leader (or raid assistant) is kept in `e.leaders`, and the report
+  Your client only knows when *you* entered combat, so it names someone only when it can compare: guildies' synced
+  reports of the fight, or nobody else of ours in it (`KKC.KnownInitiator`). Otherwise the card shows just the
+  leaders and the report says only where fighting broke out ("Fighting broke out at Tarren Mill."): with guild sync
+  off you would otherwise be first into every battle.
+- **Members and leaders**: the bar is low on purpose; better one too many on the report than a warrior left off.
+  The group is read when each segment starts and when it ends, and every guildie in it either time is a member, near
+  you or not (someone who dropped out of the raid or went offline mid-fight still fought): the meter and kill events
+  only see what happens close to you, and a guildie at the far end of the camp must still be on the report. A
+  guildmate on the meter who isn't in your group (another party at the same fight) is a member too, known by the
+  guild roster (`KKC.IsGuildmate`, which also stands in when a unit's guild flag is unreadable). Their damage and
+  healing show when the meter caught them. Non-guild group members are only counted. Whoever is party or raid leader (or raid assistant) is kept in `e.leaders`, and the report
   gets `Leaders:` / `Assists:` lines for Nazgrel, which asks who led.
 - **Attackers you never target**: while in combat, enemy players on nearby nameplates who target you or a groupmate
   join the fight (when the client hides their target, being in combat near you is enough). Otherwise a hunter shooting
@@ -90,6 +97,18 @@ out of combat (+1 s):  damage meter "Current" read ─┘
   them up would double count.
 - Enemies = union by name. Race and class come from whichever report has them.
 - Damage/healing per guildie: a guildie's own report wins over someone else's meter.
+- Only reports from **your own raid** merge (same leader; without one, a sender who was in your group; reports from
+  versions before 0.3 always merge). Another raid's report is kept beside the fight in `raids[leader]`.
+
+### Several raids at one battle: the synchronization report
+Every raid leader writes the report of their own raid, so the battle report, card and roll calls stay your raid's.
+When other raids of the guild report the same battle, the card gets a **Sync report** button (the battles list shows
+"2 raids") that opens the *Battle* or *Campaign Synchronization Report*: the whole host first (raids, Kor'kron in
+all of them, enemies once each, kills), then each raid by its leader with its Kor'kron, and *Copy text* for the
+guild's tallies (`KKC.Host`, `KKC.HostText`). For a campaign it goes fight by fight: each fight's enemies are every
+raid's together with the most kills anyone saw per enemy, and the fights add up. Another raid is only what its
+guildies' addons sent, so it needs guild sync and the addon in that raid. A guildie seen on your meter who isn't in
+your group (`members[name].outside`) leaves your warriors once another raid's roster names them.
 
 ## Notifications (not invasive)
 
@@ -256,7 +275,9 @@ the same channels, documents this in its `SyncGuild.lua`:
 So guild messages are kept rare:
 - **Only notable engagements** are sent. Minor ones stay in your own log.
 - **At most 4 messages per engagement**, packed: 1 header, up to 2 enemy messages (most kills first) and 1 guildie
-  message. Whatever doesn't fit in 250 bytes is left out.
+  message (the sender first, then who did the most). Whatever doesn't fit in 250 bytes is left out.
+- **One roster per raid**: up to 4 more messages with the raid's guildies (name and class number, about 60 names),
+  sent by a client that hasn't heard a raidmate's roster for the fight by the time its report goes out.
 - **Per client: a token bucket**, burst 4, then one message per 15 s. A random 1–7 s delay spreads the reports of
   guildies who leave the same fight together.
 - **Guild-wide: hold back** while 12 or more `KKC2` messages were heard in the last minute (our own echo included).
@@ -266,10 +287,12 @@ So guild messages are kept rare:
 - **Receivers read at most 8 messages a minute** from one sender.
 
 Lines are `;`-separated (shown with `|` below). List entries are `,`-separated and joined with `/`.
-- `H|eid|start|stop|zone|subzone|pvpSeconds|class|opened|map|x|y` engagement header (eid = `sender-start`,
-  opened `1`/`0`/empty)
+- `H|eid|start|stop|zone|subzone|pvpSeconds|class|opened|map|x|y|leader|size` engagement header (eid =
+  `sender-start`, opened `1`/`0`/empty; leader and size of the sender's party or raid, empty / 0 when solo)
 - `E|eid|name,CLASS,race,kills/...` enemies
 - `P|eid|name,CLASS,dmg,heal,died/...` guildies
+- `R|eid|name,classNumber/...` the raid's guildies (1 Warrior, 2 Paladin, 3 Hunter, 4 Rogue, 5 Priest, 6 Shaman,
+  7 Mage, 8 Warlock, 9 Druid, ...)
 
 `KKC1` (v0.1, one message per enemy and per guildie) is no longer read. Unknown kinds are ignored, so later
 versions can add more.
@@ -304,6 +327,8 @@ One engagement record (both lists), everything needed for later statistics:
 | `enemies[name]` | `class` (token), `race`, `kills`, sometimes `guild` and `level` |
 | `ownKills[name]` | Your own honor kills (ledger) |
 | `allies` | Non-guild allies in your group |
+| `raidLeader`, `groupSize` | Your party or raid's leader and size in the fight (tells raids apart) |
+| `raids[leader]` | Other raids at the battle (guild sync): `leader`, `size`, `members[name] = CLASS`, `enemies`, `reporters` |
 
 Size: roughly 1 KB per engagement, so a busy year comes to a few MB. That's fine for SavedVariables.
 

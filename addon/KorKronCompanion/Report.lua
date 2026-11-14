@@ -31,6 +31,129 @@ function KKC.Stats(e)
     return s
 end
 
+-- ------------------------------------------------------------------------------------------------
+-- Several raids at one battle (guild sync): the whole host, your raid and the others side by side
+-- ------------------------------------------------------------------------------------------------
+
+-- What a raid is called: "Krodbert Stormshroud's raid", or the one guildie whose report it was.
+local function raidLabel(leader, reporter)
+    if leader then return leader .. "'s raid" end
+    return reporter or "?"
+end
+
+-- The whole battle across raids, or nil when no other raid's report came in. For a campaign, fight by fight:
+-- every fight's enemies are its own raid's and the others' together (kills per enemy the most anyone saw), and the
+-- campaign adds those up like it does its own fights.
+-- { raids = { {label, leader, size, members = {name=class}, kor, own} }, korkron, enemies = {name={kills,...}},
+--   kills, fights }
+function KKC.Host(e)
+    local list = e.campaign and e.fightList or { e }
+    local any = false
+    for _, f in ipairs(list) do if f.raids and next(f.raids) then any = true end end
+    if not any then return nil end
+    local h = { raids = {}, enemies = {}, kills = 0, fights = #list }
+    local byKey, everyone = {}, {}
+    local function raid(key, label, leader, own)
+        local r = byKey[key]
+        if not r then
+            r = { label = label, leader = leader, size = 0, members = {}, own = own }
+            byKey[key] = r
+            h.raids[#h.raids + 1] = r
+        end
+        return r
+    end
+    local mine = raid("~own", nil, nil, true)
+    for _, f in ipairs(list) do
+        local fightEnemies = {}
+        local function enemy(en)
+            local t = fightEnemies[en.name] or { name = en.name, kills = 0 }
+            fightEnemies[en.name] = t
+            t.class, t.race = t.class or en.class, t.race or en.race
+            t.kills = math.max(t.kills, en.kills or 0)
+        end
+        -- Ours.
+        mine.leader = mine.leader or f.raidLeader
+        mine.size = math.max(mine.size, f.groupSize or 0)
+        for name, m in pairs(f.members or {}) do mine.members[name] = m.class or ""; everyone[name] = true end
+        for _, en in pairs(f.enemies or {}) do enemy(en) end
+        h.kills = h.kills + (f.unnamedKills or 0)
+        -- The others.
+        for key, o in pairs(f.raids or {}) do
+            local first = next(o.reporters or {})
+            local r = raid(key, raidLabel(o.leader, first), o.leader, false)
+            r.size = math.max(r.size, o.size or 0)
+            for name, class in pairs(o.members or {}) do
+                if r.members[name] == nil or r.members[name] == "" then r.members[name] = class end
+                everyone[name] = true
+            end
+            for _, en in pairs(o.enemies or {}) do enemy(en) end
+        end
+        for name, en in pairs(fightEnemies) do
+            local t = h.enemies[name] or { name = name, kills = 0 }
+            h.enemies[name] = t
+            t.class, t.race = t.class or en.class, t.race or en.race
+            t.kills = t.kills + en.kills
+            h.kills = h.kills + en.kills
+        end
+    end
+    -- Someone in two raids' lists (they changed raid during the night) counts once, in the host total.
+    h.korkron = KKC.count(everyone)
+    mine.label = raidLabel(mine.leader, KKC.me()) .. " (yours)"
+    for _, r in ipairs(h.raids) do r.kor = KKC.count(r.members) end
+    table.sort(h.raids, function(a, b)
+        if a.own ~= b.own then return a.own end
+        if a.kor ~= b.kor then return a.kor > b.kor end
+        return a.label < b.label
+    end)
+    return h
+end
+
+-- The synchronization report: the whole battle first, then each raid with its Kor'kron. rich: colored, for the window.
+function KKC.HostText(e, rich)
+    local h = KKC.Host(e)
+    if not h then return nil end
+    local T = KKC.Theme
+    local function c(color, text) return rich and (color .. text .. "|r") or text end
+    local foes = {}
+    for _, t in ipairs(KKC.FoeTally({ enemies = h.enemies })) do foes[#foes + 1] = t.count .. " " .. t.label end
+    local sizes = {}
+    for _, r in ipairs(h.raids) do sizes[#sizes + 1] = ("%s %d"):format(r.label, r.kor) end
+    local lines = {
+        ("Date: %s; Start time: %s; Duration: %s"):format(date("%Y-%m-%d", e.start), date("%H:%M", e.start), (function()
+            local m = math.floor(((e.stop or e.start) - e.start) / 60 + 0.5)
+            return m >= 60 and ("%dh %02dm"):format(math.floor(m / 60), m % 60) or (m .. "m")
+        end)()),
+        "Location: " .. (e.location or Report.Place(e)),
+        e.campaign and ("Clashes: %d"):format(h.fights) or nil,
+        ("Raids: %d"):format(#h.raids),
+        ("Kor'kron: %d (%s)"):format(h.korkron, table.concat(sizes, ", ")),
+        ("Enemies: %d %s%s"):format(KKC.count(h.enemies), KKC.enemyFaction(), #foes > 0 and (" (" .. table.concat(foes, ", ") .. ")") or ""),
+        "Kills (approximate): " .. (h.kills > 0 and ("at least " .. h.kills) or "none seen"),
+    }
+    local out = {}
+    for i = 1, 7 do if lines[i] then out[#out + 1] = lines[i] end end
+    for _, r in ipairs(h.raids) do
+        local names = {}
+        for name in pairs(r.members) do names[#names + 1] = name end
+        table.sort(names)
+        if rich then
+            for i, name in ipairs(names) do
+                local class = r.members[name]
+                if class ~= "" then names[i] = T.ClassLight(class) .. name .. "|r" end
+            end
+        end
+        out[#out + 1] = ""
+        local head = ("%s: %d Kor'kron%s"):format(r.label, r.kor, r.size > 0 and (" (%d in the group)"):format(r.size) or "")
+        out[#out + 1] = c("|cffffd100", head)
+        out[#out + 1] = table.concat(names, ", ")
+    end
+    if not rich then
+        out[#out + 1] = ""
+        out[#out + 1] = "Raids other than yours are what their guildies' addons reported (guild sync), so they can be incomplete."
+    end
+    return table.concat(out, "\n"), h
+end
+
 -- Kills are a minimum: only the killing blows your own client hears about count, and those far from you may not
 -- reach it. "at least 10 slain", or "no kills seen".
 function KKC.SlainText(n)
@@ -85,6 +208,15 @@ function KKC.Initiator(e)
         if not best or start < bestStart or (start == bestStart and sender < best) then best, bestStart = sender, start end
     end
     return best or e.owner
+end
+
+-- Who of ours was first into battle, only when the addon can tell: guildies' synced reports to compare with, or
+-- nobody else of ours in the fight. Nil otherwise: your client only knows when *you* entered combat, so without
+-- reports you would look first every time.
+function KKC.KnownInitiator(e)
+    if e.feed or next(e.reports or {}) then return KKC.Initiator(e) end
+    local fight = e.campaign and e.anchor or e
+    if KKC.count(fight.members or {}) <= 1 then return e.owner end
 end
 
 -- true: the enemy struck first (whoever was first into combat entered it without attacking); false: we did;
@@ -193,7 +325,9 @@ end
 -- How it started: who struck first, where, and who of ours was first into battle (for a campaign, its first fight).
 local function initiated(e)
     local place = Report.Place(e.campaign and e.anchor or e)
-    local first = KKC.Initiator(e) or "?"
+    local first = KKC.KnownInitiator(e)
+    -- Who struck first is seen from whoever was first into battle; without knowing who that was, only where.
+    if not first then return ("Fighting broke out at %s."):format(place) end
     local ambushed = KKC.Ambushed(e)
     if ambushed then
         return ("The %s struck first at %s; %s was first into battle."):format(KKC.enemyFaction(), place, first)

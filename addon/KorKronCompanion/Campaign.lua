@@ -58,6 +58,7 @@ function Campaign.View(c)
         places = {}, zones = {}, description = first.campaignDescription,
     }
     v.reports = first.reports -- first into battle: whoever opened the campaign's first fight
+    v.fightList = c.fights    -- newest first; the synchronization report goes through them (KKC.Host)
     v.opened, v.opens, v.feed = first.opened, first.opens, first.feed
     local seenPlace, seenZone = {}, {}
     for i = #c.fights, 1, -1 do -- oldest first, so places come in the order they were fought over

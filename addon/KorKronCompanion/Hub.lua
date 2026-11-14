@@ -63,10 +63,15 @@ local function colored(e)
 end
 
 local function headline(e)
+    -- A battle more raids of the guild fought in (guild sync): "3 raids".
+    local host = KKC.Host(e)
+    local raids = host and (Theme.DIM .. "~|r " .. Theme.HALL_GOLD .. #host.raids .. " raids|r") or nil
     if e.campaign then
         return Theme.HALL_GOLD .. KKC.Campaign.Name(e) .. "|r  " .. colored(e) .. "  " .. Theme.DIM .. "~ until " .. date("%H:%M", e.stop) .. "|r"
+            .. (raids and ("  " .. raids) or "")
     end
     local tags = {}
+    if host then tags[#tags + 1] = Theme.HALL_GOLD .. #host.raids .. " raids|r" end
     if e.minor then tags[#tags + 1] = Theme.DIM .. "skirmish|r" end
     if e.feed then tags[#tags + 1] = Theme.DIM .. "by " .. (KKC.Initiator(e) or "?") .. "|r" end
     return colored(e) .. (#tags > 0 and ("  " .. Theme.DIM .. "~|r " .. table.concat(tags, ", ")) or "")

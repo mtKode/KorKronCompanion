@@ -2,14 +2,20 @@
   Sharing engagements between guildies with the addon (hidden addon messages on the GUILD channel).
 
   When a notable engagement closes, each client sends what it saw, packed into at most four messages:
-    H;eid;start;stop;zone;subzone;pvpSeconds;class;opened;map;x;y   header (eid = owner-start;
-                                                       opened 1/0/empty = struck first / hit first / unknown)
+    H;eid;start;stop;zone;subzone;pvpSeconds;class;opened;map;x;y;leader;size   header (eid = owner-start;
+                                                       opened 1/0/empty = struck first / hit first / unknown;
+                                                       leader, size: the sender's party or raid, telling raids apart)
     E;eid;name,CLASS,race,kills/name,CLASS,race,kills/...           enemies, most kills first (up to two messages)
-    P;eid;name,CLASS,dmg,heal,died/...                              guildies (one message)
+    P;eid;name,CLASS,dmg,heal,died/...                              guildies, the sender first (one message)
+    R;eid;name,c/name,c/...                                         the raid's guildies, c = class number (up to
+                                                                    four messages; one client per raid sends it)
   Receivers merge a report into their own engagement when the zone matches and the times overlap; reports about
   fights they weren't in go to the guild feed (KKC.db.feed).
   Kills per enemy merge as the maximum (everyone in a group gets the same honor kill); a guildie's own damage and
   healing win over what someone else's meter said. Unknown kinds are ignored, so later versions can add more.
+  Several raids at one battle: a report from another raid (another leader) does not join your fight. It is kept
+  beside it in e.raids[leader], for the battle's synchronization report (KKC.Host): every leader still writes the
+  report of their own raid.
 
   Since Forever's launch the servers are strict about addon messages (what Overlord Forever, which syncs over the
   same channels, found the hard way):
@@ -159,30 +165,66 @@ end
 
 local function values(...) return { n = select("#", ...), ... } end
 
-function S.Messages(e)
+-- Class names <-> the one or two digits a roster sends.
+local CLASS_LIST = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID",
+    "DEATHKNIGHT", "MONK", "DEMONHUNTER", "EVOKER" }
+local CLASS_NUM = {}
+for i, c in ipairs(CLASS_LIST) do CLASS_NUM[c] = i end
+
+-- withRoster: add the raid's guildies (R), for a raid that hasn't sent its roster yet.
+function S.Messages(e, withRoster)
     local opened = e.opened == true and 1 or (e.opened == false and 0 or "")
     local msgs = { line("H", e.id, e.start, e.stop, e.zone, e.subzone, e.pvpSeconds or 0, KKC.myClass() or "",
-        opened, e.map or "", e.x or "", e.y or "") }
+        opened, e.map or "", e.x or "", e.y or "", e.raidLeader or "", e.groupSize or 0) }
     local enemies = {}
     for _, en in ipairs(KKC.sortedValues(e.enemies, function(a, b)
         if (a.kills or 0) ~= (b.kills or 0) then return (a.kills or 0) > (b.kills or 0) end
         return a.name < b.name
     end)) do enemies[#enemies + 1] = values(en.name, en.class or "", en.race or "", en.kills or 0) end
+    -- You first (your own numbers count most), then whoever did the most.
+    local me = KKC.me()
     local members = {}
-    for _, m in ipairs(KKC.sortedValues(e.members)) do
-        members[#members + 1] = values(m.name, m.class or "", math.floor(m.dmg or 0), math.floor(m.heal or 0), m.died and 1 or 0)
+    for _, m in ipairs(KKC.sortedValues(e.members, function(a, b)
+        if (a.name == me) ~= (b.name == me) then return a.name == me end
+        local x, y = (a.dmg or 0) + (a.heal or 0), (b.dmg or 0) + (b.heal or 0)
+        if x ~= y then return x > y end
+        return a.name < b.name
+    end)) do
+        if not m.outside then
+            members[#members + 1] = values(m.name, m.class or "", math.floor(m.dmg or 0), math.floor(m.heal or 0), m.died and 1 or 0)
+        end
     end
     for _, msg in ipairs(packed("E", e.id, enemies, 2)) do msgs[#msgs + 1] = msg end
     for _, msg in ipairs(packed("P", e.id, members, 1)) do msgs[#msgs + 1] = msg end
+    if withRoster then
+        local roster = {}
+        for _, m in ipairs(KKC.sortedValues(e.members)) do
+            if not m.outside then roster[#roster + 1] = values(m.name, CLASS_NUM[m.class or ""] or "") end
+        end
+        for _, msg in ipairs(packed("R", e.id, roster, 4)) do msgs[#msgs + 1] = msg end
+    end
     return msgs
+end
+
+-- Has someone of this raid already sent its roster for this fight? Then one roster is enough.
+local rosters = {} -- { leader, zone, start, stop, at } heard from our own raid
+local function rosterHeard(e)
+    if not e.raidLeader then return false end
+    for _, r in ipairs(rosters) do
+        if r.leader == e.raidLeader and KKC.Tracker.Fits(e, r.start, r.stop, r.zone) then return true end
+    end
+    return false
 end
 
 -- Only notable engagements are worth a guild message; minor ones stay in your own log.
 function S.Broadcast(e)
     if not KKC.settings().sync then return end -- off until guild sync has been tested (/kkc sync on)
     if e.test or e.minor or not IsInGuild() then return end
-    local msgs = S.Messages(e)
-    C_Timer.After(1 + math.random() * OUT.JITTER, function() enqueue(msgs) end)
+    -- Decided after the jitter: by then a raidmate's roster may have come in, and ours isn't needed.
+    C_Timer.After(1 + math.random() * OUT.JITTER, function()
+        local roster = (e.groupSize or 0) > 0 and not rosterHeard(e)
+        enqueue(S.Messages(e, roster))
+    end)
 end
 
 KKC.Listen("EngagementClosed", S.Broadcast)
@@ -232,7 +274,62 @@ local function mergeMember(e, who, p)
     if p.died then m.died = true end
 end
 
-local function mergeInto(e, r)
+-- Another raid at our battle: kept beside the fight in e.raids[leader], not mixed into our own warriors.
+local function raidOf(e, r)
+    e.raids = e.raids or {}
+    local key = r.leader or r.who
+    local raid = e.raids[key]
+    if not raid then
+        raid = { leader = r.leader, members = {}, enemies = {}, reporters = {} }
+        e.raids[key] = raid
+    end
+    return raid
+end
+
+local function mergeRaidEnemy(raid, en)
+    local t = raid.enemies[en.name] or { name = en.name, kills = 0 }
+    raid.enemies[en.name] = t
+    t.class, t.race = t.class or en.class, t.race or en.race
+    t.kills = math.max(t.kills or 0, en.kills or 0)
+end
+
+local function mergeRaidMember(e, raid, name, class)
+    if name == KKC.me() then return end
+    if raid.members[name] == nil or raid.members[name] == "" then raid.members[name] = class or "" end
+    -- Seen on our meter but of that raid: they go in its report, not ours.
+    local m = e.members[name]
+    if m and m.outside then e.members[name] = nil end
+end
+
+local function mergeRaid(e, r)
+    local raid = raidOf(e, r)
+    raid.reporters[r.who] = true
+    raid.size = math.max(raid.size or 0, r.size or 0)
+    raid.start = math.min(raid.start or r.start, r.start)
+    raid.stop = math.max(raid.stop or r.stop, r.stop)
+    mergeRaidMember(e, raid, r.who, r.class)
+    for _, en in pairs(r.enemies) do mergeRaidEnemy(raid, en) end
+    for _, p in pairs(r.members) do mergeRaidMember(e, raid, p.name, p.class) end
+    for name, class in pairs(r.roster or {}) do mergeRaidMember(e, raid, name, class) end
+    changed(e)
+end
+
+-- Is the sender in our raid? By its leader; without one (solo, or an older version that doesn't say), by whether we
+-- had them in our group. Older versions send no size: their reports merge as they always did.
+local function sameRaid(e, r)
+    if r.size == nil then return true end
+    if r.leader and e.raidLeader then return r.leader == e.raidLeader end
+    local m = e.members[r.who]
+    return m ~= nil and not m.outside
+end
+
+local mergeInto
+local function place(e, r)
+    r.other = not sameRaid(e, r)
+    if r.other then mergeRaid(e, r) else mergeInto(e, r) end
+end
+
+function mergeInto(e, r)
     e.reports[r.who] = r.start
     e.opens = e.opens or {}
     e.opens[r.who] = r.opened
@@ -265,7 +362,7 @@ local function adopt(e, r)
         r.feed = nil
     end
     r.target = e
-    mergeInto(e, r)
+    place(e, r)
 end
 
 local function toFeed(r)
@@ -323,12 +420,13 @@ function handlers.H(who, f)
         class = nonEmpty(f[8]), at = KKC.now(), enemies = {}, members = {},
         opened = opened,
         map = tonumber(f[10]), x = tonumber(f[11]), y = tonumber(f[12]),
+        leader = nonEmpty(f[13]), size = tonumber(f[14]), roster = {},
     }
     reports[f[2]] = r
     local e = KKC.Tracker.Match(start, stop, r.zone)
     if e then
         r.target = e
-        mergeInto(e, r)
+        place(e, r)
     else
         toFeed(r)
     end
@@ -352,7 +450,7 @@ function handlers.E(who, f)
     for _, v in ipairs(entries(f[3])) do
         local en = { name = v[1], class = nonEmpty(v[2]), race = nonEmpty(v[3]), kills = tonumber(v[4]) or 0 }
         r.enemies[en.name] = en
-        if e then mergeEnemy(e, en) end
+        if e and r.other then mergeRaidEnemy(raidOf(e, r), en) elseif e then mergeEnemy(e, en) end
     end
     if e then changed(e) end
 end
@@ -364,7 +462,22 @@ function handlers.P(who, f)
     for _, v in ipairs(entries(f[3])) do
         local p = { name = v[1], class = nonEmpty(v[2]), dmg = tonumber(v[3]) or 0, heal = tonumber(v[4]) or 0, died = v[5] == "1" }
         r.members[p.name] = p
-        if e then mergeMember(e, who, p) end
+        if e and r.other then mergeRaidMember(e, raidOf(e, r), p.name, p.class) elseif e then mergeMember(e, who, p) end
+    end
+    if e then changed(e) end
+end
+
+function handlers.R(who, f)
+    local r = reports[f[2]]
+    if not (r and r.who == who) then return end
+    -- A raidmate sent our raid's roster: we needn't send it too.
+    if r.leader then rosters[#rosters + 1] = { leader = r.leader, zone = r.zone, start = r.start, stop = r.stop } end
+    while #rosters > 20 do table.remove(rosters, 1) end
+    local e = destination(r)
+    for _, v in ipairs(entries(f[3])) do
+        local class = CLASS_LIST[tonumber(v[2] or "") or 0] or ""
+        r.roster[v[1]] = class
+        if e and r.other then mergeRaidMember(e, raidOf(e, r), v[1], class) end
     end
     if e then changed(e) end
 end

@@ -194,8 +194,10 @@ local function groupInfo()
         if name then
             local inGuild = KKC.try(UnitIsInMyGuild, unit)
             local _, class = KKC.try(UnitClass, unit)
-            info[name] = { guild = KKC.readable(inGuild) and inGuild or false, class = KKC.readable(class) and class or nil,
-                lead = leadRole(unit) }
+            -- The unit's guild flag, else the guild roster (the flag can be unreadable).
+            local guild = KKC.readable(inGuild) and inGuild == true
+            if not guild then guild = KKC.IsGuildmate(name) end
+            info[name] = { guild = guild, class = KKC.readable(class) and class or nil, lead = leadRole(unit) }
         end
     end
     -- In a party the units above don't include you; in a raid they do.
@@ -341,8 +343,11 @@ local function addToEngagement(s)
     local others = 0
     for name, a in pairs(s.allies) do
         local g = s.group and s.group[name]
-        if name == me or (g and g.guild) then
+        -- On the meter beside you: you, guildmates in your group, and guildmates in another group (by the roster).
+        if name == me or (g and g.guild) or (not g and KKC.IsGuildmate(name)) then
             local m = memberOf(e, name)
+            -- Not in your group: maybe another raid at the same battle (sync sorts that out, see Sync.lua).
+            if not g and name ~= me and m.outside == nil then m.outside = true end
             m.class = m.class or a.class or (g and g.class)
             m.dmg = (m.dmg or 0) + (a.dmg or 0)
             m.heal = (m.heal or 0) + (a.heal or 0)
@@ -355,6 +360,7 @@ local function addToEngagement(s)
         if g.guild or name == me then
             local m = memberOf(e, name)
             m.class = m.class or g.class
+            m.outside = nil
         else
             others = others + 1
         end
@@ -362,12 +368,17 @@ local function addToEngagement(s)
     e.allies = math.max(e.allies or 0, others)
 
     -- Who led the group in any of the engagement's fights. A leader stays a leader even if they handed it on.
+    -- The current leader and the group's size also tell this raid apart from others at the same battle (Sync.lua).
+    local size = 0
     for name, g in pairs(s.group or {}) do
+        size = size + 1
         if g.lead then
             e.leaders = e.leaders or {}
             if e.leaders[name] ~= "leader" then e.leaders[name] = g.lead end
+            if g.lead == "leader" then e.raidLeader = name end
         end
     end
+    e.groupSize = math.max(e.groupSize or 0, size)
 
     scheduleClose()
     KKC.Fire("EngagementUpdated", e)
@@ -427,6 +438,11 @@ local function finishSegment(s)
     if lastSeg == s then lastSeg = nil end
     if s.skip then return end
     s.group = groupInfo()
+    -- Who was in the group when the fight began counts too: someone who dropped out of the raid, or went offline,
+    -- before it ended still fought.
+    for name, g in pairs(s.groupStart or {}) do
+        if not s.group[name] then s.group[name] = g end
+    end
     pcall(readMeter, s)
     pcall(nameKills, s)
     if s.pvp then addToEngagement(s) end
@@ -439,6 +455,7 @@ end
 KKC.On("PLAYER_REGEN_DISABLED", function()
     if seg then return end
     seg = newSegment()
+    seg.groupStart = KKC.try(groupInfo)
     seg.opened = GetTime() - lastOffense <= OPEN_WINDOW
     seg.map, seg.x, seg.y = where()
 end)
