@@ -9,7 +9,10 @@ for it. Guild sync (sharing battles with guildies who run the addon) is off unti
 - First evening after launch: [LAUNCH-CHECKLIST.md](LAUNCH-CHECKLIST.md)
 
 ## Install
-Copy `addon\KorKronCompanion` into `World of Warcraft\_forever_\Interface\AddOns`. (`install-addon.ps1` in a local
+Download the latest `KorKronCompanion-x.y.z.zip` from the Releases page and unpack it into
+`World of Warcraft\_forever_\Interface\AddOns`.
+
+From a checkout: copy `addon\KorKronCompanion` into `World of Warcraft\_forever_\Interface\AddOns`. (`install-addon.ps1` in a local
 checkout links it instead; it's not tracked in git.)
 
 ## Commands
