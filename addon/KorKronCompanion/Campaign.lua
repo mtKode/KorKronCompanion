@@ -88,6 +88,7 @@ function Campaign.View(c)
             t.heal = (t.heal or 0) + (m.heal or 0)
             if m.died then t.died = true; t.deaths = (t.deaths or 0) + 1 end
             if m.reported then t.reported = true end
+            if not m.outside then t.inRaid = true end
         end
         for name, en in pairs(e.enemies or {}) do
             local t = v.enemies[name] or { name = name, kills = 0 }
@@ -108,9 +109,12 @@ function Campaign.View(c)
         location[#location + 1] = #p.subs > 0 and (p.zone .. " - " .. table.concat(p.subs, ", ")) or p.zone
     end
     v.location = table.concat(location, "; ")
+    -- In your raid in any of the fights: one of yours. Only ever outside it: seen alongside (Stats).
+    for _, t in pairs(v.members) do t.outside = not t.inRaid or nil end
     v.attendance = KKC.RollCall and KKC.RollCall.Attendance(v)
     for name, a in pairs(v.attendance and v.attendance.names or {}) do
         if not v.members[name] then v.members[name] = { name = name, class = a.class, dmg = 0, heal = 0, rollOnly = true } end
+        v.members[name].outside = nil -- at a roll call of your raid
     end
     return v
 end

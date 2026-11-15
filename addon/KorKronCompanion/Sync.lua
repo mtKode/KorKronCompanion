@@ -9,7 +9,10 @@
     P;eid;name,CLASS,dmg,heal,died/...                              guildies, the sender first (one message)
     R;eid;name,c/name,c/...                                         the raid's guildies, c = class number (up to
                                                                     four messages; one client per raid sends it)
-  Receivers merge a report into their own engagement when the zone matches and the times overlap; reports about
+    T;eid;map,x,y/map,x,y/...                                       the fight's route (up to 12 points), so a
+                                                                    battle over a zone's border still matches
+  Receivers merge a report into their own engagement when the times overlap and the zone matches or the routes came
+  within KKC.NEAR yards (a battle on a zone's border, a chase across it); reports about
   fights they weren't in go to the guild feed (KKC.db.feed).
   Kills per enemy merge as the maximum (everyone in a group gets the same honor kill); a guildie's own damage and
   healing win over what someone else's meter said. Unknown kinds are ignored, so later versions can add more.
@@ -26,6 +29,14 @@
   So guild messages here are kept rare: minor engagements are never sent, one client spends at most one message per
   TOKEN_SEC (BURST at once), nothing goes out while the guild is busy with our prefix, a refused message is retried
   later instead of lost, and nothing is sent or read inside an instance or in combat.
+
+  Patient by design: how soon a report shows up doesn't matter, that nothing gets lost does. A big night can be three
+  raids of 40 with the addon each, and the guild channel carries only a few reports a minute. So a fight isn't sent
+  when it closes. It waits its turn (TURN): the raid leader speaks for the raid first, the assistants a while later,
+  everyone else only much later and only as a backup. When a client's turn comes it first checks what it has heard:
+  once ENOUGH of its raid have reported that fight, it stays quiet. Nobody sends while the fighting goes on (an open
+  engagement), and the report is built when it's sent, so it carries what raidmates' reports added meanwhile. Time
+  spent unable to send (combat, a busy channel) doesn't count against a waiting message.
 ]]
 
 local _, KKC = ...
@@ -40,11 +51,10 @@ local OUT = {
     TOKEN_SEC = 15,      -- one message per 15 s per client on average...
     BURST = 4,           -- ...but one engagement (up to 4 messages) can go out at once
     GUILD_PER_MIN = 12,  -- hold back while the guild already carries this many of our messages a minute
-    TTL = 300,           -- a message still waiting after 5 minutes is given up
+    TTL = 600,           -- a message still waiting after 10 minutes of being able to send is given up
     OUTBOX_MAX = 16,
-    JITTER = 6,          -- guildies in the same fight close it at the same moment: spread their reports
 }
-local INTAKE_PER_MIN = 8 -- more than this from one sender in a minute is not ours to read
+local INTAKE_PER_MIN = 10 -- more than this from one sender in a minute is not ours to read
 
 -- Results that mean "not sent, try again later": throttles, lockdown, a general error.
 local RETRY_CODES = { [3] = true, [8] = true, [9] = true, [11] = true }
@@ -95,7 +105,10 @@ pump = function()
         S.stats.dropped = S.stats.dropped + 1
     end
     if #outbox == 0 then return end
-    if blocked() then return schedule(5) end
+    if blocked() then
+        for _, o in ipairs(outbox) do o.at = now end -- waiting out a fight is not the message's fault
+        return schedule(5)
+    end
     refill()
     if tokens < 1 then return schedule((1 - tokens) * OUT.TOKEN_SEC) end
     if guildLoad() >= OUT.GUILD_PER_MIN then return schedule(10) end
@@ -176,6 +189,12 @@ function S.Messages(e, withRoster)
     local opened = e.opened == true and 1 or (e.opened == false and 0 or "")
     local msgs = { line("H", e.id, e.start, e.stop, e.zone, e.subzone, e.pvpSeconds or 0, KKC.myClass() or "",
         opened, e.map or "", e.x or "", e.y or "", e.raidLeader or "", e.groupSize or 0) }
+    -- The route, when it went anywhere: right after the header, so receivers can place the report by it.
+    if e.route and #e.route > 1 then
+        local points = {}
+        for _, p in ipairs(e.route) do points[#points + 1] = values(p[1], p[2], p[3]) end
+        for _, msg in ipairs(packed("T", e.id, points, 1)) do msgs[#msgs + 1] = msg end
+    end
     local enemies = {}
     for _, en in ipairs(KKC.sortedValues(e.enemies, function(a, b)
         if (a.kills or 0) ~= (b.kills or 0) then return (a.kills or 0) > (b.kills or 0) end
@@ -206,25 +225,81 @@ function S.Messages(e, withRoster)
     return msgs
 end
 
--- Has someone of this raid already sent its roster for this fight? Then one roster is enough.
-local rosters = {} -- { leader, zone, start, stop, at } heard from our own raid
-local function rosterHeard(e)
-    if not e.raidLeader then return false end
-    for _, r in ipairs(rosters) do
-        if r.leader == e.raidLeader and KKC.Tracker.Fits(e, r.start, r.stop, r.zone) then return true end
-    end
-    return false
+-- The reports heard (and our own sent) by raid: who of a raid already spoke about a fight, and whether its roster came.
+local heardRaids = {} -- { leader, zone, start, stop, who, roster, route }
+local function noteRaid(leader, zone, start, stop, who, route)
+    local h = { leader = leader, zone = zone, start = start, stop = stop, who = who, route = route }
+    heardRaids[#heardRaids + 1] = h
+    while #heardRaids > 80 do table.remove(heardRaids, 1) end
+    return h
 end
 
--- Only notable engagements are worth a guild message; minor ones stay in your own log.
+-- How many of our raid reported this fight (different guildies), and whether one of them sent the roster.
+local function raidHeard(e)
+    if not e.raidLeader then return 0, false end
+    local who, roster, n = {}, false, 0
+    for _, h in ipairs(heardRaids) do
+        if h.leader == e.raidLeader and KKC.Tracker.Fits(e, h.start, h.stop, h.zone, h.route) then
+            if not who[h.who] then who[h.who] = true; n = n + 1 end
+            roster = roster or h.roster
+        end
+    end
+    return n, roster
+end
+S.RaidHeard = raidHeard
+
+-- Whose turn: seconds to wait after the fight, plus up to this many more at random (so two don't go at once).
+local TURN = { solo = { 5, 25 }, leader = { 20, 20 }, assist = { 120, 120 }, member = { 360, 480 } }
+local ENOUGH = 2         -- reports from one raid about one fight: more add little
+local QUIET_MAX = 900    -- while fighting goes on nobody sends; after this long a waiting report goes anyway
+local WAITING_MAX = 20
+
+local function turnOf(e)
+    if (e.groupSize or 0) <= 1 or not e.raidLeader then return "solo" end
+    local me = KKC.me()
+    if e.raidLeader == me then return "leader" end
+    if e.leaders and e.leaders[me] then return "assist" end -- an assistant, or a leader earlier in the fight
+    return "member"
+end
+S.TurnOf = turnOf
+
+local waiting = {} -- { e, at, due }
+local waitTimer
+local function sendDue()
+    waitTimer = nil
+    local now = GetTime()
+    local busy = blocked() or KKC.Tracker.Open() ~= nil
+    for i = #waiting, 1, -1 do
+        local w = waiting[i]
+        if now >= w.due and (not busy or (now - w.at > QUIET_MAX and not blocked())) then
+            table.remove(waiting, i)
+            local e = w.e
+            local n, roster = raidHeard(e)
+            if e.raidLeader and n >= ENOUGH then
+                S.stats.quiet = (S.stats.quiet or 0) + 1 -- our raid has spoken for this fight
+            else
+                local withRoster = (e.groupSize or 0) > 0 and not roster
+                enqueue(S.Messages(e, withRoster))
+                if e.raidLeader then
+                    noteRaid(e.raidLeader, e.zone, e.start, e.stop, KKC.me(), KKC.Tracker.RouteOf(e)).roster = withRoster
+                end
+            end
+        end
+    end
+    if #waiting > 0 then waitTimer = C_Timer.NewTimer(10, sendDue) end
+end
+
+function S.Waiting() return #waiting end
+
+-- Only notable engagements are worth a guild message; minor ones stay in your own log. The fight waits its turn.
 function S.Broadcast(e)
     if not KKC.settings().sync then return end -- off until guild sync has been tested (/kkc sync on)
     if e.test or e.minor or not IsInGuild() then return end
-    -- Decided after the jitter: by then a raidmate's roster may have come in, and ours isn't needed.
-    C_Timer.After(1 + math.random() * OUT.JITTER, function()
-        local roster = (e.groupSize or 0) > 0 and not rosterHeard(e)
-        enqueue(S.Messages(e, roster))
-    end)
+    local t = TURN[turnOf(e)]
+    local now = GetTime()
+    waiting[#waiting + 1] = { e = e, at = now, due = now + t[1] + math.random() * t[2] }
+    while #waiting > WAITING_MAX do table.remove(waiting, 1) end
+    if not waitTimer then waitTimer = C_Timer.NewTimer(5, sendDue) end
 end
 
 KKC.Listen("EngagementClosed", S.Broadcast)
@@ -368,7 +443,7 @@ end
 local function toFeed(r)
     for i = 1, math.min(30, #KKC.db.feed) do
         local f = KKC.db.feed[i]
-        if KKC.Tracker.Fits(f, r.start, r.stop, r.zone) then
+        if KKC.Tracker.Fits(f, r.start, r.stop, r.zone, r.route) then
             r.feed = f
             return mergeInto(f, r)
         end
@@ -376,6 +451,7 @@ local function toFeed(r)
     local f = {
         id = r.who .. "-" .. r.start, owner = r.who, start = r.start, stop = r.stop, zone = r.zone, subzone = r.subzone or "",
         pvpSeconds = 0, allies = 0, feed = true, enemies = {}, members = {}, ownKills = {}, reports = {},
+        route = r.route,
     }
     table.insert(KKC.db.feed, 1, f)
     KKC.Prune(KKC.db.feed, "feed")
@@ -390,7 +466,7 @@ local function adoptWaiting(e)
     for eid, r in pairs(reports) do
         if now - r.at > KEEP then
             reports[eid] = nil
-        elseif not r.target and KKC.Tracker.Fits(e, r.start, r.stop, r.zone) then
+        elseif not r.target and KKC.Tracker.Fits(e, r.start, r.stop, r.zone, r.route) then
             adopt(e, r)
         end
     end
@@ -422,8 +498,11 @@ function handlers.H(who, f)
         map = tonumber(f[10]), x = tonumber(f[11]), y = tonumber(f[12]),
         leader = nonEmpty(f[13]), size = tonumber(f[14]), roster = {},
     }
+    -- Where it started, until the route (T) comes.
+    if r.map and r.x and r.y then r.route = { { r.map, r.x, r.y } } end
     reports[f[2]] = r
-    local e = KKC.Tracker.Match(start, stop, r.zone)
+    if r.leader then r.heard = noteRaid(r.leader, r.zone, start, stop, who, r.route) end
+    local e = KKC.Tracker.Match(start, stop, r.zone, r.route)
     if e then
         r.target = e
         place(e, r)
@@ -467,12 +546,30 @@ function handlers.P(who, f)
     if e then changed(e) end
 end
 
+-- The route: a report that went to the feed may turn out to be of our battle after all (over a zone's border).
+function handlers.T(who, f)
+    local r = reports[f[2]]
+    if not (r and r.who == who) then return end
+    local route = {}
+    for _, v in ipairs(entries(f[3])) do
+        local map, x, y = tonumber(v[1]), tonumber(v[2]), tonumber(v[3])
+        if map and x and y then route[#route + 1] = { map, x, y } end
+    end
+    if #route == 0 then return end
+    r.route = route
+    if r.heard then r.heard.route = route end
+    if r.feed and not r.feed.route then r.feed.route = route end
+    if not r.target then
+        local e = KKC.Tracker.Match(r.start, r.stop, r.zone, route)
+        if e then adopt(e, r) end
+    end
+end
+
 function handlers.R(who, f)
     local r = reports[f[2]]
     if not (r and r.who == who) then return end
-    -- A raidmate sent our raid's roster: we needn't send it too.
-    if r.leader then rosters[#rosters + 1] = { leader = r.leader, zone = r.zone, start = r.start, stop = r.stop } end
-    while #rosters > 20 do table.remove(rosters, 1) end
+    -- A raidmate sent the raid's roster: we needn't send it too.
+    if r.heard then r.heard.roster = true end
     local e = destination(r)
     for _, v in ipairs(entries(f[3])) do
         local class = CLASS_LIST[tonumber(v[2] or "") or 0] or ""

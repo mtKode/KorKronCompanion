@@ -22,10 +22,13 @@ KKC.Report = Report
 
 function KKC.Stats(e)
     -- kills: named ones per enemy, plus killing blows whose victim the client kept secret.
-    local s = { members = KKC.count(e.members), enemies = KKC.count(e.enemies), kills = e.unnamedKills or 0, fallen = {} }
+    -- members: your raid's warriors. A guildie the meter saw who wasn't in your group (outside) may be of another
+    -- raid at the same battle: listed apart (alongside), so two raids' reports don't both count them.
+    local s = { members = 0, alongside = 0, enemies = KKC.count(e.enemies), kills = e.unnamedKills or 0, fallen = {} }
     for _, en in pairs(e.enemies or {}) do s.kills = s.kills + (en.kills or 0) end
     for _, m in pairs(e.members or {}) do
-        if m.died then s.fallen[#s.fallen + 1] = m.name end
+        if m.outside then s.alongside = s.alongside + 1 else s.members = s.members + 1 end
+        if m.died and not m.outside then s.fallen[#s.fallen + 1] = m.name end
     end
     table.sort(s.fallen)
     return s
@@ -74,7 +77,9 @@ function KKC.Host(e)
         -- Ours.
         mine.leader = mine.leader or f.raidLeader
         mine.size = math.max(mine.size, f.groupSize or 0)
-        for name, m in pairs(f.members or {}) do mine.members[name] = m.class or ""; everyone[name] = true end
+        for name, m in pairs(f.members or {}) do
+            if not m.outside then mine.members[name] = m.class or ""; everyone[name] = true end
+        end
         for _, en in pairs(f.enemies or {}) do enemy(en) end
         h.kills = h.kills + (f.unnamedKills or 0)
         -- The others.
@@ -341,8 +346,10 @@ end
 -- as the template asks), then a few details below it.
 function Report.CopyText(e, description)
     local s = KKC.Stats(e)
-    local members, foes = {}, {}
-    for _, m in ipairs(KKC.sortedValues(e.members)) do members[#members + 1] = m.name end
+    local members, foes, alongside = {}, {}, {}
+    for _, m in ipairs(KKC.sortedValues(e.members)) do
+        if m.outside then alongside[#alongside + 1] = m.name else members[#members + 1] = m.name end
+    end
     -- The enemy only as a tally: the report is about who of ours fought.
     for _, t in ipairs(KKC.FoeTally(e)) do foes[#foes + 1] = t.count .. " " .. t.label end
     local main, others = KKC.MainLeader(e)
@@ -386,6 +393,8 @@ function Report.CopyText(e, description)
         end
         lines[#lines + 1] = "Roll calls: " .. table.concat(calls, ", ")
     end
+    -- Not counted above: they may be in another raid's report (guild sync would have told).
+    if #alongside > 0 then lines[#lines + 1] = "Guildies seen outside our raid: " .. table.concat(alongside, ", ") end
     if (e.allies or 0) > 0 then lines[#lines + 1] = ("Other allies: %d"):format(e.allies) end
     lines[#lines + 1] = ("Enemies: %d %s%s"):format(s.enemies, KKC.enemyFaction(), #foes > 0 and (" (" .. table.concat(foes, ", ") .. ")") or "")
     return table.concat(lines, "\n")

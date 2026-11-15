@@ -26,6 +26,46 @@ function KKC.try(f, ...)
 end
 
 -- True when v is a normal value this addon may use (not nil, not a secret).
+-- Map positions as world positions (yards, per continent), so two fights in different zones can be compared: a
+-- battle on a zone's border, or a chase across it. Nil when the client can't tell. Cached: the same points come back.
+local worldCache, worldCount = {}, 0
+function KKC.WorldPos(map, x, y)
+    if not (map and x and y and C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return nil end
+    local key = map .. ":" .. x .. ":" .. y
+    local w = worldCache[key]
+    if w == nil then
+        w = false
+        local ok, continent, pos = pcall(C_Map.GetWorldPosFromMapPos, map, CreateVector2D(x, y))
+        if ok and KKC.readable(continent) and type(continent) == "number" and pos and KKC.readable(pos) and pos.GetXY then
+            local wx, wy = KKC.try(pos.GetXY, pos)
+            if KKC.readable(wx) and KKC.readable(wy) and type(wx) == "number" and type(wy) == "number" then
+                w = { continent, wx, wy }
+            end
+        end
+        if worldCount > 4000 then wipe(worldCache); worldCount = 0 end
+        worldCache[key], worldCount = w, worldCount + 1
+    end
+    return w or nil
+end
+
+-- Did two routes ({ {map, x, y}, ... }) come within NEAR yards of each other anywhere? A chase covers half a zone, so
+-- any point of one near any point of the other is enough.
+KKC.NEAR = 300
+function KKC.Near(a, b)
+    if not (a and b) then return false end
+    local limit = KKC.NEAR * KKC.NEAR
+    for _, p in ipairs(a) do
+        local wp = KKC.WorldPos(p[1], p[2], p[3])
+        if wp then
+            for _, q in ipairs(b) do
+                local wq = KKC.WorldPos(q[1], q[2], q[3])
+                if wq and wq[1] == wp[1] and (wp[2] - wq[2]) ^ 2 + (wp[3] - wq[3]) ^ 2 <= limit then return true end
+            end
+        end
+    end
+    return false
+end
+
 function KKC.readable(v)
     if v == nil then return false end
     if issecretvalue and issecretvalue(v) then return false end

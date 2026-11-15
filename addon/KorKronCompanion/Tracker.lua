@@ -141,6 +141,29 @@ local function where()
     return map
 end
 
+-- The fight's route: a point at each start and end of combat and every ROUTE_EVERY seconds in between, so a chase across
+-- a zone, or over its border, can still be matched with guildies' reports of the same battle (Sync.lua, KKC.Near).
+local ROUTE_EVERY, ROUTE_MAX, ROUTE_STEP = 20, 12, 0.015
+local function addPoint(route, map, x, y)
+    if not (map and x and y) then return end
+    local last = route[#route]
+    if last and last[1] == map and math.abs(last[2] - x) + math.abs(last[3] - y) < ROUTE_STEP then return end
+    route[#route + 1] = { map, x, y }
+end
+-- At most ROUTE_MAX points: the first, the last and evenly spaced ones between.
+local function thinRoute(route)
+    if #route <= ROUTE_MAX then return route end
+    local out = {}
+    for i = 0, ROUTE_MAX - 1 do out[#out + 1] = route[1 + math.floor(i * (#route - 1) / (ROUTE_MAX - 1) + 0.5)] end
+    return out
+end
+T.AddPoint, T.ThinRoute, T.ROUTE_MAX = addPoint, thinRoute, ROUTE_MAX
+local function sampleRoute(s)
+    if seg ~= s then return end
+    addPoint(s.route, where())
+    C_Timer.After(ROUTE_EVERY, function() sampleRoute(s) end)
+end
+
 -- Did we open the fight? An attack, auto shot or cast while targeting an enemy player just before combat starts
 -- means we struck first; entering combat without one means they hit us (an ambush).
 local OPEN_WINDOW = 5
@@ -317,6 +340,11 @@ local function addToEngagement(s)
         eng.opened, eng.map, eng.x, eng.y = s.opened, s.map, s.x, s.y
     end
     local e = eng
+    if s.route and #s.route > 0 then
+        e.route = e.route or {}
+        for _, p in ipairs(s.route) do addPoint(e.route, p[1], p[2], p[3]) end
+        e.route = thinRoute(e.route)
+    end
     e.stop = math.max(e.stop, s.stop or s.start)
     e.pvpSeconds = e.pvpSeconds + math.max(1, (s.stop or s.start) - s.start)
 
@@ -458,6 +486,8 @@ KKC.On("PLAYER_REGEN_DISABLED", function()
     seg.groupStart = KKC.try(groupInfo)
     seg.opened = GetTime() - lastOffense <= OPEN_WINDOW
     seg.map, seg.x, seg.y = where()
+    seg.route = {}
+    sampleRoute(seg)
 end)
 
 KKC.On("PLAYER_ENTER_COMBAT", noteOffense)     -- auto attack on
@@ -468,6 +498,7 @@ KKC.On("PLAYER_REGEN_ENABLED", function()
     local s = seg
     seg = nil
     if not s then return end
+    if s.route then addPoint(s.route, where()) end -- where the fighting ended
     s.stop = KKC.now()
     if lastSeg then finishSegment(lastSeg) end
     lastSeg = s
@@ -579,16 +610,24 @@ end)
 
 function T.Open() return eng end
 
--- The engagement (open or logged) that a guildie's report belongs to: same zone, overlapping time.
-function T.Fits(e, start, stop, zone)
-    local gap = KKC.settings().mergeGap
-    return e and not e.test and e.zone == zone and start <= e.stop + gap and stop >= e.start - gap
+-- Where a fight went: its route, or just where it started (older entries, older versions' reports).
+function T.RouteOf(e)
+    if e.route and #e.route > 0 then return e.route end
+    if e.map and e.x and e.y then return { { e.map, e.x, e.y } } end
 end
 
-function T.Match(start, stop, zone)
-    if T.Fits(eng, start, stop, zone) then return eng end
+-- The engagement (open or logged) that a guildie's report belongs to: overlapping time, and the same zone or, across a
+-- zone's border, routes that came within KKC.NEAR yards of each other. route: the report's, may be nil.
+function T.Fits(e, start, stop, zone, route)
+    local gap = KKC.settings().mergeGap
+    if not (e and not e.test and start <= e.stop + gap and stop >= e.start - gap) then return false end
+    return e.zone == zone or KKC.Near(T.RouteOf(e), route)
+end
+
+function T.Match(start, stop, zone, route)
+    if T.Fits(eng, start, stop, zone, route) then return eng end
     for i = 1, math.min(20, #KKC.db.log) do
-        if T.Fits(KKC.db.log[i], start, stop, zone) then return KKC.db.log[i] end
+        if T.Fits(KKC.db.log[i], start, stop, zone, route) then return KKC.db.log[i] end
     end
 end
 

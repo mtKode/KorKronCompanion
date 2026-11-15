@@ -299,12 +299,12 @@ local function buildCard()
         function() if f.engagement then KKC.RollCall.ShowTimeline(f.engagement) end end)
     table.insert(f.buttons, 4, f.rollButton)
     -- Only when other raids at the same battle reported (guild sync): the whole host, raid by raid.
-    f.hostButton = button("Sync report", 130, "The synchronization report: every raid of the guild at this battle, from their guildies' addons (guild sync). Your own report stays your raid's.",
+    f.hostButton = button("Multi-raid report", 140, "The multi-raid report: every raid of the guild at this battle, from their guildies' addons (guild sync). Your own report stays your raid's.",
         function() if f.engagement then UI.ShowHost(f.engagement) end end)
     table.insert(f.buttons, 5, f.hostButton)
-    -- Full and narrower widths: with both Roll calls and Sync report the row must still fit the card.
-    local WIDTHS = { 150, 150, 160, 130, 130, 110 }
-    local NARROW = { 126, 128, 140, 104, 110, 80 }
+    -- Full and narrower widths: with both Roll calls and Multi-raid report the row must still fit the card.
+    local WIDTHS = { 150, 150, 160, 130, 140, 110 }
+    local NARROW = { 120, 124, 136, 96, 132, 80 }
     -- A centered row, clear of the bottom edge, of the buttons this card has.
     function f.layoutButtons()
         local shown, width = {}, -8
@@ -372,7 +372,8 @@ local function fillCard(e)
     -- As many warriors as possible in one picture: 13 in one wide column (with TRP3 titles), 26 in two columns,
     -- 39 in three (names only). Past that the mouse wheel scrolls them.
     local att = e.attendance -- outings only (Campaign.View)
-    local members = KKC.sortedValues(e.members)
+    local members = {}
+    for _, m in ipairs(KKC.sortedValues(e.members)) do if not m.outside then members[#members + 1] = m end end
     if att then
         -- Who stayed longest first: the roll calls are the officers' proof of who was there.
         table.sort(members, function(a, b)
@@ -393,6 +394,7 @@ local function fillCard(e)
     for i = offset + 1, #members do shown[#shown + 1] = members[i] end
     local scrolls = #members > #rows
     card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members)
+        .. (s.alongside > 0 and (Theme.DIM .. ("   + %d outside our raid"):format(s.alongside) .. "|r") or "")
         .. (att and (Theme.DIM .. ("   present at %d roll calls"):format(#att.calls) .. "|r") or "")
         .. (scrolls and (Theme.DIM .. ("   %d-%d, scroll for more"):format(offset + 1, offset + #rows - (#shown > #rows and 1 or 0)) .. "|r") or ""))
     setRows(rows, shown, function(m)

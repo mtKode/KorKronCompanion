@@ -64,10 +64,20 @@ local function debug()
     end
 
     KKC.say(("  honor kill patterns: %d (should be 4)"):format(KKC.Tracker.HonorPatternCount()))
+    -- World positions: what matches a battle over a zone's border (KKC.Near).
+    do
+        local map = C_Map and KKC.try(C_Map.GetBestMapForUnit, "player")
+        local pos = KKC.readable(map) and type(map) == "number" and KKC.try(C_Map.GetPlayerMapPosition, map, "player")
+        local x, y
+        if pos and KKC.readable(pos) and pos.GetXY then x, y = KKC.try(pos.GetXY, pos) end
+        local w = KKC.readable(x) and type(x) == "number" and KKC.WorldPos(map, x, y)
+        KKC.say("  world position: " .. (w and ("yes (continent %d, %.0f, %.0f yards)"):format(w[1], w[2], w[3])
+            or ("no" .. (type(x) == "number" and " (map position readable, world position not)" or " (map position hidden)"))))
+    end
     KKC.say("  in guild: " .. yesNo(IsInGuild()) .. ", addon prefix registered: " .. tostring(KKC.Sync.prefixRegistered))
     local st = KKC.Sync.stats
-    KKC.say(("  guild sync %s: %d sent, %d refused%s, %d given up, %d waiting"):format(KKC.settings().sync and "on" or "off", st.ok, st.refused,
-        st.lastCode and (" (last code " .. tostring(st.lastCode) .. ")") or "", st.dropped, KKC.Sync.Pending()))
+    KKC.say(("  guild sync %s: %d sent, %d refused%s, %d given up, %d waiting to send, %d fights waiting their turn, %d left to raidmates"):format(KKC.settings().sync and "on" or "off", st.ok, st.refused,
+        st.lastCode and (" (last code " .. tostring(st.lastCode) .. ")") or "", st.dropped, KKC.Sync.Pending(), KKC.Sync.Waiting(), st.quiet or 0))
     KKC.say("  chat lockdown: " .. yesNo(C_ChatInfo.InChatMessagingLockdown and KKC.try(C_ChatInfo.InChatMessagingLockdown)))
 
     -- Only IsEnabled: every other C_Discord function (the guild link status too) is restricted to Blizzard's UI.
