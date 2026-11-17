@@ -295,9 +295,17 @@ local function buildCard()
         button("Close", 110, nil, function() f:Hide() end),
     }
     f.hornButton = f.buttons[2] -- Sound the horn: only when switched on in Settings (settings.horn)
-    -- Only on an outing with roll calls: the night roll call by roll call, in its own window.
-    f.rollButton = button("Roll calls", 130, "Each roll call of this outing: who was with us, who joined, who left and who was offline.",
-        function() if f.engagement then KKC.RollCall.ShowTimeline(f.engagement) end end)
+    -- Only on an outing with roll calls. Click: who joined later or left early, after their names (hidden until
+    -- asked for, each time a card opens). Right click: the night roll call by roll call, in its own window.
+    f.rollButton = button("Roll calls", 130, "Click: show or hide who joined later or left early, after their names. "
+        .. "Right click: every roll call of this outing, who joined, who left and who was offline.",
+        function(self, mouse)
+            if not f.engagement then return end
+            if mouse == "RightButton" then return KKC.RollCall.ShowTimeline(f.engagement) end
+            f.showComings = not f.showComings
+            UI.ShowCard(f.engagement, true)
+        end)
+    f.rollButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     table.insert(f.buttons, 4, f.rollButton)
     -- Only when other raids at the same battle reported (guild sync): the whole host, raid by raid.
     f.hostButton = button("Multi-raid report", 140, "The multi-raid report: every raid of the guild at this battle, from their guildies' addons (guild sync). Your own report stays your raid's.",
@@ -368,12 +376,13 @@ local function fillCard(e)
     end
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
     card.hasRollCalls = e.attendance ~= nil
+    card.rollButton:SetSelected(card.showComings and card.hasRollCalls or false)
     card.hasHost = KKC.Host(e) ~= nil
     if not card.capturing then card.layoutButtons() end
 
     -- As many warriors as possible in one picture: 13 in one wide column (with TRP3 titles), 26 in two columns,
     -- 39 in three (names only). Past that the mouse wheel scrolls them.
-    local att = e.attendance -- outings only (Campaign.View)
+    local att = card.showComings and e.attendance -- outings only (Campaign.View), and only when asked for
     local members = {}
     for _, m in ipairs(KKC.sortedValues(e.members)) do if not m.outside then members[#members + 1] = m end end
     local many = s.members > ROWS
@@ -432,7 +441,7 @@ end
 function UI.ShowCard(e, keepScroll)
     if not e then return end
     card = card or buildCard()
-    if not keepScroll or card.engagement ~= e then card.memberOffset = 0 end
+    if not keepScroll or card.engagement ~= e then card.memberOffset, card.showComings = 0, nil end
     fillCard(e)
     card:Show()
 end

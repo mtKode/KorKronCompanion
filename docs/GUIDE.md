@@ -16,7 +16,7 @@ banner by your minimap.
 | Post the report in guild or officer chat | In the Scribe report window: **Guild chat** / **Officer chat** (click twice; it posts a line every 1.5 s) |
 | Post one line about a battle in guild chat | Off by default. Settings → **Sound the horn**, then Battle card → **Sound the horn** (in the Chronicle: a line about the whole period) |
 | A clean screenshot of the card | Battle card → **Capture likeness** hides the buttons for a few seconds; press Print Screen |
-| See who came and went through a night | Battle card of a campaign: "joined 19:12" or "left 20:30" after a name; **Roll calls** for the night roll call by roll call |
+| See who came and went through a night | Battle card of a campaign → **Roll calls** shows "joined 19:12" or "left 20:30" after the names (click again to hide). Right click it for the night roll call by roll call |
 | See every raid of the guild at one battle | Battle card → **Multi-raid report** (shows only with guild sync, when other raids reported) |
 | Take a roll call now | `/kkc rollcall`, or shift click the minimap banner |
 | See battles guildies fought without you | Hall → **From the field** (needs guild sync) |

@@ -190,11 +190,12 @@ An outing's roll calls (from 10 minutes before its first fight to 5 after its la
 who **joined later** (first seen at a roll call when the one before it was already taken during the outing) and who
 **left early** (gone at a roll call taken before the last fight ended). Missing one roll call in the middle of the
 night notes nothing. The times are those of the roll calls, so within 10 minutes. Guildmates present at roll calls
-join the outing's warriors even if no fight came near them. The battle card puts the note after the name
-(`Ozzy  joined 22:18`). With the setting "Comings and goings in the report" (off by default,
+join the outing's warriors even if no fight came near them. The battle card shows none of it until the **Roll calls**
+button is clicked: then the note follows the name (`Ozzy  joined 22:18`); another click hides it, and each card opens
+without it. With the setting "Comings and goings in the report" (off by default,
 `/kkc rollcall report on`) the report text adds `Joined later: Ozzy (22:18)` and `Left early: Zhara (23:05)`.
-Single fights show nothing of the roll calls (theirs are just their start and end). Behind a **Roll calls** button on an
-outing's card (shown only when it has roll calls) is the night roll call by roll call: the time, how many were with us
+Single fights show nothing of the roll calls (theirs are just their start and end). A right click on the **Roll calls**
+button of an outing's card (shown only when it has roll calls) opens the night roll call by roll call: the time, how many were with us
 and whether a screenshot was taken, then who joined, who was gone and who was offline since the roll call before,
 and at the end who joined later and who left early.
 

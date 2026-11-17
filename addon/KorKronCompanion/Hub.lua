@@ -1083,8 +1083,8 @@ local function buildSettings(parent)
         onOff(self.rollReport, set.rollcallsInReport,
             "On: the report of a campaign adds who joined later and who left early, with the time of the roll call "
                 .. "that noticed it (roll calls are taken every 10 minutes). One or two lines more to paste.",
-            "Off: the report lists the Kor'kron by name only. The battle card still notes who joined later or left "
-                .. "early, and its Roll calls button shows the night roll call by roll call.")
+            "Off: the report lists the Kor'kron by name only. On the battle card, the Roll calls button shows who "
+                .. "joined later or left early (right click: the night roll call by roll call).")
         onOff(self.horn, set.horn,
             "On: battle cards and the Chronicle get a Sound the horn button. One click posts a one-line account of the "
                 .. "battle in guild chat (and to Discord, if guild chat is linked there).",
