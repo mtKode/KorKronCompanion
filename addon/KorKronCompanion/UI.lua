@@ -294,6 +294,7 @@ local function buildCard()
             function() UI.Screenshot() end),
         button("Close", 110, nil, function() f:Hide() end),
     }
+    f.hornButton = f.buttons[2] -- Sound the horn: only when switched on in Settings (settings.horn)
     -- Only on an outing with roll calls: the night roll call by roll call, in its own window.
     f.rollButton = button("Roll calls", 130, "Each roll call of this outing: who was present, who joined, who left and who was away.",
         function() if f.engagement then KKC.RollCall.ShowTimeline(f.engagement) end end)
@@ -310,7 +311,8 @@ local function buildCard()
         local shown, width = {}, -8
         local narrow = f.hasRollCalls and f.hasHost
         for i, b in ipairs(f.buttons) do
-            if (b ~= f.rollButton or f.hasRollCalls) and (b ~= f.hostButton or f.hasHost) then
+            if (b ~= f.rollButton or f.hasRollCalls) and (b ~= f.hostButton or f.hasHost)
+                and (b ~= f.hornButton or KKC.settings().horn) then
                 b:SetWidth(narrow and NARROW[i] or WIDTHS[i])
                 shown[#shown + 1] = b
                 width = width + (narrow and NARROW[i] or WIDTHS[i]) + 8
@@ -467,7 +469,7 @@ function UI.CopyReport(e)
 end
 
 function UI.Share(e)
-    if not e or e.feed or e.test then return end
+    if not e or e.feed or e.test or not KKC.settings().horn then return end -- the horn is off unless switched on
     local holder = e.campaign and e.anchor or e -- a campaign view is rebuilt each time; remember it on its first fight
     local key = e.campaign and "campaignShared" or "shared"
     if holder[key] then return KKC.say("the horn has already sounded for this " .. (e.campaign and "campaign." or "battle.")) end

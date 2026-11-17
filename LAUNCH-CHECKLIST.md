@@ -76,9 +76,11 @@ Run `/kkc debug` first and keep its output.
       narrower page). Icons show (no green boxes; untouched tracks are grey), bars fill, "Tier 1 of 4". The cards
       scroll (wheel or the small bar on the right) and don't run past the page's bottom.
 - [ ] Settings: seven rows on the right (announcing, who is told, guild sync, roll calls in the report, Overlord,
-      minimap button, size of the hall), each as tall as its text; each button switches and the text follows.
-      Notifications show "Quiet". Who is told: "Raid leaders" (in a raid only its leader gets the notice; alone or
-      in a party, whoever fought) or "Everyone".
+      minimap button, size of the hall): title and button on top, the explanation across the row below, the column
+      scrolling when it doesn't fit; each button switches and the explanation follows.
+      "Your notice of a battle" shows "Quiet" (Off / Quiet / Toast / Card). "Which battles you hear of": "Raids I
+      lead" (raids you lead and fights outside a raid) or "Every battle"; with the notice off it says you hear of
+      none.
       Overlord off: no Nemesis marks, the Chronicle says the heralds were sent away. Minimap: the button hides and
       shows. Size: shows the percentage; "Usual size" resets a resized hall. Left page: Show test battle and
       Diagnostics.
@@ -107,6 +109,8 @@ Run `/kkc debug` first and keep its output.
 - [ ] A fight you were both in shows only on **My fights**, never in the feed.
 
 ## 5. Bridge
+- [ ] Sound the horn is off by default: no horn button on the battle card or in the Chronicle. Switched on in
+      Settings, it appears in both.
 - [ ] **Sound the horn** on a real battle (not the test card, where it's disabled) posts the line in `/g` with no
       "blocked" popup. `SendChatMessage` is flagged `HasRestrictions` (it's fine from a button click in other
       clients). If it's blocked here, the horn has to become "copy the line" instead.

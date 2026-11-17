@@ -204,6 +204,7 @@ KKC.defaults = {
         sync = false,           -- share engagements with guildies over GUILD addon messages (/kkc sync on)
         notify = "quiet",       -- off | quiet (one chat line) | toast | prompt; tracking runs either way
         promptAll = false,      -- true: notify everyone; false: raid leaders (outside a raid, whoever fought)
+        horn = false,           -- the Sound the horn buttons (a line in guild chat); off: hidden
         mergeGap = 60,          -- seconds out of combat before an engagement closes
         notableSeconds = 20,    -- this much PvP combat makes an engagement notable
         notableEnemies = 2,     -- or this many enemy players

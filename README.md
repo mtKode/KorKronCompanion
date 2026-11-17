@@ -5,6 +5,7 @@ WoW: Forever addon for a world PvP guild. It logs PvP battles quietly in the bac
 was there) and the battle report text ready to paste, and a War Ledger of your deeds. Nothing pops up unless you ask
 for it. Guild sync (sharing battles with guildies who run the addon) is off until it has been tested.
 
+- **New here? A short guide to the features and words: [docs/GUIDE.md](docs/GUIDE.md)**
 - Design and API constraints: [docs/DESIGN.md](docs/DESIGN.md)
 - First evening after launch: [LAUNCH-CHECKLIST.md](LAUNCH-CHECKLIST.md)
 
@@ -25,8 +26,8 @@ checkout links it instead; it's not tracked in git.)
 | `/kkc card [n]` / `copy [n]` | Battle card / report text for battle n (default: the latest notable battle's whole campaign) |
 | `/kkc campaign [n]` | Campaign card for outing n: every fight less than 30 min apart as one report |
 | `/kkc log [all]` / `ledger chat` | Recent battles / War Ledger totals in chat |
-| `/kkc notify off\|quiet\|toast\|prompt` | How you're told about a battle (default `quiet`: one chat line) |
-| `/kkc all on\|off` | Tell you of every battle, not only as raid leader (outside a raid you're always told) |
+| `/kkc notify off\|quiet\|toast\|prompt` | Your own notice when a battle ends (default `quiet`: one chat line; `prompt` opens the card). Nothing is sent to others |
+| `/kkc all on\|off` | Which battles you hear of: every battle, or (off) raids you lead and fights outside a raid |
 | `/kkc sync on\|off` | Share battles with guildies (default off) |
 | `/kkc rollcall` | A roll call now on a sheet beside the raid panel, for a Print Screen (also shift click on the minimap button) |
 | `/kkc rollcall report on\|off` | Roll calls in the report text too (off by default; they're always on the battle card) |

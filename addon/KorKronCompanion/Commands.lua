@@ -173,8 +173,8 @@ end
 
 commands.all = function(arg)
     if arg == "on" then KKC.settings().promptAll = true elseif arg == "off" then KKC.settings().promptAll = false end
-    KKC.say("who is told of a battle: " .. (KKC.settings().promptAll and "everyone who fought"
-        or "raid leaders (outside a raid, whoever fought)") .. " (/kkc all on|off)")
+    KKC.say("battles you hear of: " .. (KKC.settings().promptAll and "every battle you fought in"
+        or "raids you lead, and fights outside a raid") .. " (/kkc all on|off; only your own notice, nothing is sent)")
 end
 
 commands.sync = function(arg)

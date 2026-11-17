@@ -522,6 +522,29 @@ local function buildChronicle(parent, guild)
         p.share:SetPoint("LEFT", p.copy, "RIGHT", 8, 0)
     end
 
+    -- The two buttons share the page's width; Scribe chronicle alone fills it (From the field, or with the horn off).
+    function p:SizeButtons()
+        local horn = self.share and KKC.settings().horn
+        if self.share then self.share:SetShown(horn and true or false) end
+        if self.book then
+            -- Side by side over the page's width; alone, Scribe chronicle just as wide as its icon and words, in the
+            -- middle.
+            for _, b in ipairs({ self.copy, self.share }) do b:SetSize(211, 32) end
+            if not horn then
+                local tw = KKC.try(self.copy.label.GetStringWidth, self.copy.label)
+                self.copy:SetWidth(30 + (type(tw) == "number" and tw > 0 and tw or 110) + 16)
+            end
+            if self.side then
+                self.copy:ClearAllPoints()
+                if horn then
+                    self.copy:SetPoint("BOTTOMLEFT", self.side, "BOTTOMLEFT", 0, 0)
+                else
+                    self.copy:SetPoint("BOTTOM", self.side, "BOTTOMLEFT", PAGE_W / 2, 0)
+                end
+            end
+        end
+    end
+
     -- Book: heading, periods, the tiles in a 2 x 2 grid and the buttons on the left page; the details fill the
     -- right page. Docked: periods, heading, a row of tiles, the details and the buttons, top to bottom.
     function p:Layout(book, side)
@@ -547,9 +570,9 @@ local function buildChronicle(parent, guild)
         if book then
             self.details:SetPoint("TOPLEFT", self, "TOPLEFT", 0, self.standing and -(STANDING_H + 12) or -4)
             self.details:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 4)
-            at(self.copy, "BOTTOMLEFT", side, "BOTTOMLEFT", 0, 0)
-            -- The two buttons share the page's width (just one, filling it, on From the field).
-            for _, b in ipairs({ self.copy, self.share }) do b:SetSize(self.share and 211 or PAGE_W, 32) end
+            self.side = side
+            self.book = true
+            self:SizeButtons()
         else
             for _, b in ipairs({ self.copy, self.share }) do b:SetSize(150, 26) end
             self.details:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -152)
@@ -583,6 +606,7 @@ local function buildChronicle(parent, guild)
         self.tiles.fallen.value:SetText(Theme.BAD .. data.fallen .. "|r")
         self.tiles.blow.value:SetText(("%s%d|r / %s%d|r"):format(Theme.GOOD, data.struck, Theme.BAD, data.ambushed))
         if self.share then self.share:SetEnabled(data.engagements > 0) end
+        self:SizeButtons()
         self.tally:Set({
             { "Battles", data.engagements .. Theme.DIM .. "  (" .. data.notable .. " of note)|r" },
             { "Foes slain", Theme.GOOD .. data.kills .. "|r" },
@@ -902,12 +926,16 @@ end
 -- Settings
 -- ------------------------------------------------------------------------------------------------
 
+-- Your own notice when a battle ends (settings.notify): only you see it, nothing is sent. Every battle is logged in the
+-- hall either way.
 local NOTIFY = {
-    off = "Off: never announce a battle.",
-    quiet = "Quiet: one line in chat.",
-    toast = "Toast: a small note at the top of the screen.",
-    prompt = "Prompt: open the battle card straight away.",
+    off = "Off: you get no notice when a battle ends. Every battle is still logged and can be read here in the hall "
+        .. "at any time.",
+    quiet = "Quiet: one line in your chat when a battle ends, with /kkc card to open its report. Nothing pops up.",
+    toast = "Toast: a small note with a sound at the top of your screen when a battle ends. It goes away by itself.",
+    prompt = "Card: the battle card opens by itself when a battle ends, ready for a screenshot or to copy the report.",
 }
+local NOTIFY_LABEL = { off = "Off", quiet = "Quiet", toast = "Toast", prompt = "Card" }
 local NOTIFY_ORDER = { "toast", "quiet", "prompt", "off" }
 
 local function buildSettings(parent)
@@ -918,34 +946,43 @@ local function buildSettings(parent)
     p.heading:SetText("Settings")
     p.intro = Theme.LightText(p, 12)
     dim(p.intro, "How you hear of battles, what is shared with the guild and read from Overlord, and how the hall "
-        .. "looks. Each button on the right switches its setting; the text beside it says what it does now.")
+        .. "looks. Each button switches its setting; the text under it says what the setting does as it is now.")
 
+    -- The settings in one column that scrolls when they don't all fit. Each row: its title with the button beside it,
+    -- then what the setting does now, across the whole row.
+    p.scroll = CreateFrame("ScrollFrame", nil, p, "UIPanelScrollFrameTemplate")
+    p.child = CreateFrame("Frame", nil, p.scroll)
+    p.child:SetSize(400, 10)
+    p.scroll:SetScrollChild(p.child)
     p.rowList = {}
     local function row(title, buttonLabel, onClick)
-        local box = Theme.Inset(p)
+        local box = Theme.Inset(p.child)
         p.rowList[#p.rowList + 1] = box
         box.title = Theme.LightText(box, 15, "LEFT", true)
-        box.title:SetPoint("TOPLEFT", 14, -8)
+        box.title:SetPoint("TOPLEFT", 14, -12)
         box.title:SetText(title)
+        box.button = Theme.HallButton(box, buttonLabel, 150, 26, nil, nil, onClick)
+        box.button:SetPoint("TOPRIGHT", -12, -8)
         box.text = Theme.LightText(box, 12)
-        box.text:SetPoint("TOPLEFT", box.title, "BOTTOMLEFT", 0, -4)
-        box.text:SetPoint("RIGHT", -190, 0)
-        box.button = Theme.HallButton(box, buttonLabel, 160, 26, nil, nil, onClick)
-        box.button:SetPoint("RIGHT", -14, 0)
+        box.text:SetPoint("TOPLEFT", 14, -42)
+        box.text:SetPoint("RIGHT", -14, 0)
+        box.text:SetJustifyV("TOP")
+        box.text:SetSpacing(2)
         return box
     end
     local function flip(key) return function() KKC.settings()[key] = not KKC.settings()[key]; p:Refresh() end end
 
-    p.notify = row("Announcing battles", "Change", function()
+    p.notify = row("Your notice of a battle", "Change", function()
         local set = KKC.settings()
         local i = 1
         for k, v in ipairs(NOTIFY_ORDER) do if v == set.notify then i = k end end
         set.notify = NOTIFY_ORDER[i % #NOTIFY_ORDER + 1]
         p:Refresh()
     end)
-    p.all = row("Who is told", "Change", flip("promptAll"))
+    p.all = row("Which battles you hear of", "Change", flip("promptAll"))
     p.sync = row("Guild sync", "Change", flip("sync"))
     p.rollReport = row("Roll calls in the report", "Change", flip("rollcallsInReport"))
+    p.horn = row("Sound the horn", "Change", flip("horn"))
     p.overlord = row("Overlord", "Change", function()
         local set = KKC.settings()
         -- On unless switched off (nil: on).
@@ -980,7 +1017,10 @@ local function buildSettings(parent)
         layoutHeading(self, book, side, self.intro, -2)
         self.intro:SetShown(book)
         self.extras:SetShown(book)
-        self.top, self.minHeight = book and 4 or 44, book and 66 or 58
+        local top = book and 4 or 44
+        self.scroll:ClearAllPoints()
+        self.scroll:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -top)
+        self.scroll:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -24, book and 4 or 34) -- the bar sits in those 24
         self:Stack()
         if book then
             at(self.test, "BOTTOMLEFT", side, "BOTTOMLEFT", 0, 0)
@@ -995,18 +1035,22 @@ local function buildSettings(parent)
         end
     end
 
-    -- Each row as tall as its explanation needs (at least minHeight), one under the other.
+    -- Each row as tall as its explanation, one under the other in the scrolling column.
     function p:Stack()
-        local y = self.top or 4
+        local w = KKC.try(self.scroll.GetWidth, self.scroll)
+        w = type(w) == "number" and w > 0 and w or 406
+        self.child:SetWidth(w)
+        local y = 0
         for _, box in ipairs(self.rowList) do
-            local h = KKC.try(box.text.GetStringHeight, box.text)
-            local height = math.max(self.minHeight or 66, (type(h) == "number" and h or 30) + 38)
             box:ClearAllPoints()
-            box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
-            box:SetPoint("RIGHT", self, "RIGHT", 0, 0)
+            box:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
+            box:SetWidth(w)
+            local h = KKC.try(box.text.GetStringHeight, box.text)
+            local height = (type(h) == "number" and h or 30) + 54
             box:SetHeight(height)
             y = y + height + 6
         end
+        self.child:SetHeight(math.max(y, 10))
     end
 
     local function onOff(box, on, onText, offText, onLabel, offLabel)
@@ -1018,27 +1062,50 @@ local function buildSettings(parent)
     function p:Refresh()
         local set = KKC.settings()
         self.notify.text:SetText(Theme.DIM .. NOTIFY[set.notify] .. "|r")
-        self.notify.button:SetLabel(set.notify:sub(1, 1):upper() .. set.notify:sub(2))
-        onOff(self.all, set.promptAll, "Everyone who fought is told about a battle.",
-            "In a raid, its leader is told (they write the report). Outside a raid, whoever fought.", "Everyone",
-            "Raid leaders")
+        self.notify.button:SetLabel(NOTIFY_LABEL[set.notify] or set.notify)
+        onOff(self.all, set.promptAll,
+            "Every battle: you get the notice above for every battle you fought in, in your own raid or someone "
+                .. "else's. Only your own notice: nothing is sent to anyone.",
+            "Raids I lead: you get the notice above for the battles you would write up: raids you lead, and every "
+                .. "fight outside a raid. In someone else's raid its leader writes it, so you're left in peace. Only "
+                .. "your own notice: nothing is sent to anyone.", "Every battle", "Raids I lead")
+        if set.notify == "off" then
+            self.all.text:SetText(Theme.DIM .. "Your notice is off (above), so you hear of no battle at all. When it's "
+                .. "on, this decides which battles it covers. Only your own notice: nothing is sent to anyone.|r")
+        end
         onOff(self.sync, set.sync,
-            "On: notable battles are shared with guildies who have the addon, in hidden messages, never in guild chat.",
-            "Off: nothing is sent or read. From the field stays empty.")
+            "On: after a notable battle your addon shares it with guildies who have the addon too, in hidden addon "
+                .. "messages that never show in guild chat. Their battles come back to you: in your own battle cards "
+                .. "when you fought together, under From the field when you didn't. It goes slowly on purpose, a few "
+                .. "messages a battle, so the guild channel is never flooded.",
+            "Off: nothing is sent or read. Your battles stay your own and From the field stays empty. Turn it on when "
+                .. "your guildies use the addon too.")
         onOff(self.rollReport, set.rollcallsInReport,
-            "On: the report ranks the Kor'kron by roll calls (Name 100%) and lists them. Longer to paste.",
-            "Off: the report lists the Kor'kron by name. Roll calls stay on the battle card.")
+            "On: the report text ranks the Kor'kron by how many roll calls they were at (Name 100%) and lists each roll "
+                .. "call. Good for attendance, longer to paste.",
+            "Off: the report text lists the Kor'kron by name only. Roll calls are still taken every 10 minutes and "
+                .. "shown on the battle card.")
+        onOff(self.horn, set.horn,
+            "On: battle cards and the Chronicle get a Sound the horn button. One click posts a one-line account of the "
+                .. "battle in guild chat (and to Discord, if guild chat is linked there).",
+            "Off: no Sound the horn buttons, so nothing goes into guild chat from a stray click. Reports are still "
+                .. "shared the usual way: Scribe report, then paste.")
         local overlordOn = set.overlord ~= false
         local installed = type(Overlord) == "table"
         onOff(self.overlord, overlordOn,
-            (installed and "On" or "On, but Overlord isn't installed") .. ": Nemesis marks and the standing of the guilds.",
-            "Off: Overlord is left alone, even when installed.")
+            (installed and "On" or "On, but you don't have Overlord installed") .. ": when the Overlord addon is "
+                .. "there, two things are read from it. Foes on its Nemesis list are marked on your battles, and the "
+                .. "Chronicle shows its standing of the guilds. Nothing is sent, and nothing in Overlord is changed.",
+            "Off: Overlord is left alone even when it is installed: no Nemesis marks, no standing of the guilds.")
         onOff(self.minimap, not set.minimap.hide,
-            "Shown: left click the hall, right click the latest report.",
-            "Hidden: open the hall with /kkc.", "Shown", "Hidden")
+            "Shown: the banner by your minimap. Left click opens this hall, right click the report of your latest "
+                .. "battle; drag it to move it around the minimap.",
+            "Hidden: no button by your minimap. Open the hall with /kkc.", "Shown", "Hidden")
         local scale = set.hallScale or 1
-        self.size.text:SetText(Theme.DIM .. ("The hall at %d%%. Drag the grip in its bottom right corner to resize."):format(
-            math.floor(scale * 100 + 0.5)) .. "|r")
+        local pct = math.floor(scale * 100 + 0.5)
+        self.size.text:SetText(Theme.DIM .. (pct == 100 and "The hall is at its usual size. " or
+            ("The hall is at %d%% of its usual size. "):format(pct)) .. "Drag the grip in its bottom right corner to "
+            .. "make it bigger or smaller" .. (pct == 100 and "." or "; this button puts it back.") .. "|r")
         self.size.button:SetEnabled(math.abs(scale - 1) > 0.005)
         self:Stack()
     end
@@ -1142,6 +1209,7 @@ local function build()
     f.crest:SetPoint("TOPLEFT", 26, -24)
     if not Theme.Atlas(f.crest, Theme.F().emblem) then f.crest:SetTexture(Theme.F().icon) end
     f.who = Theme.LightText(f, 19, "LEFT", true)
+    f.name = Theme.LightText(f, 17, "CENTER") -- in the book: your name, over your totals (f.sub)
     f.sub = Theme.LightText(f, 12)
 
     f.nav = {}
@@ -1151,31 +1219,133 @@ local function build()
         Theme.LinkStyle(b)
         f.nav[i] = b
     end
-    -- Ribbon bookmarks hanging out of the bottom of the book, one per section (the book only).
-    local RIBBONS = { { 0.55, 0.10, 0.07 }, { 0.20, 0.38, 0.16 }, { 0.18, 0.28, 0.50 }, { 0.40, 0.20, 0.48 }, { 0.38, 0.37, 0.35 } }
+    -- Ribbon bookmarks hanging out of the bottom of the book, one per section (the book only). War-worn: dark, dull
+    -- colors (dried blood, moss, faded blue, dull purple, ash) on a cloth grain (our page texture, tinted), grimier
+    -- towards the end, a stain, and a frayed end of uneven threads instead of a clean cut.
+    local RIBBONS = { { 0.36, 0.08, 0.06 }, { 0.17, 0.24, 0.12 }, { 0.14, 0.18, 0.28 }, { 0.26, 0.15, 0.28 }, { 0.26, 0.25, 0.23 } }
+    local TORN = 16 -- the last pixels of a ribbon: its torn (or cut) end
+    local CUT = { [2] = 1, [5] = -1 } -- these two were slashed by a blade, slanting opposite ways; the rest are torn
     f.ribbons = {}
     for i, s in ipairs(SECTIONS) do
+        -- Each ribbon worn in its own way: random, but the same on every login (seeded by the ribbon).
+        local seed = i * 7919 + 104729
+        local function rnd(a, b)
+            seed = (seed * 9301 + 49297) % 233280
+            return a + math.floor(seed / 233280 * (b - a + 1))
+        end
         local r = CreateFrame("Button", nil, f)
         r:SetSize(18, 52)
         r:SetFrameLevel(f:GetFrameLevel() + 3)
         local c = RIBBONS[i]
         local body = r:CreateTexture(nil, "ARTWORK")
-        body:SetAllPoints()
-        body:SetColorTexture(c[1], c[2], c[3], 1)
-        local edge = r:CreateTexture(nil, "ARTWORK", nil, 1)
+        body:SetPoint("TOPLEFT")
+        body:SetPoint("BOTTOMRIGHT", 0, TORN)
+        body:SetTexture(Theme.MEDIA .. "Page")
+        body:SetTexCoord(0.1 * i, 0.1 * i + 0.08, 0.2, 0.6) -- a different stretch of grain on each
+        body:SetVertexColor(c[1] * 1.6, c[2] * 1.6, c[3] * 1.6)
+        -- Grime gathering towards the end.
+        local grime = r:CreateTexture(nil, "ARTWORK", nil, 1)
+        grime:SetAllPoints(body)
+        grime:SetColorTexture(1, 1, 1, 1)
+        if not (grime.SetGradient and CreateColor and pcall(grime.SetGradient, grime, "VERTICAL",
+            CreateColor(0.05, 0.03, 0.02, 0.55), CreateColor(0.05, 0.03, 0.02, 0))) then
+            grime:SetColorTexture(0, 0, 0, 0.2)
+        end
+        local edge = r:CreateTexture(nil, "ARTWORK", nil, 2)
         edge:SetPoint("TOPLEFT")
-        edge:SetPoint("BOTTOMLEFT")
-        edge:SetWidth(3)
-        edge:SetColorTexture(1, 1, 1, 0.15)
-        -- The swallowtail end: a diamond in the cover's color cut into the bottom.
-        local notch = r:CreateTexture(nil, "ARTWORK", nil, 2)
-        notch:SetSize(12, 12)
-        notch:SetPoint("CENTER", r, "BOTTOM", 0, 0)
-        notch:SetColorTexture(0.11, 0.06, 0.03, 1)
-        if notch.SetRotation then notch:SetRotation(math.pi / 4) end
+        edge:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT")
+        edge:SetWidth(2)
+        edge:SetColorTexture(1, 1, 1, 0.06)
+        -- A mark of battle, a different kind on each, built from small pieces of the cloth's own grain (not flat
+        -- squares): spattered blood, a scuff, a scorch, a patch rubbed pale.
+        local function piece(w, h, x, y, rr, gg, bb, a, angle)
+            local t = r:CreateTexture(nil, "ARTWORK", nil, 3)
+            t:SetSize(w, h)
+            t:SetPoint("CENTER", body, "TOP", x, y)
+            t:SetTexture(Theme.MEDIA .. "Page")
+            local u, v = rnd(0, 80) / 100, rnd(0, 80) / 100
+            t:SetTexCoord(u, u + 0.06, v, v + 0.06)
+            t:SetVertexColor(rr, gg, bb, a)
+            if angle and t.SetRotation then t:SetRotation(angle) end
+            return t
+        end
+        local function spatter(n, y0)
+            for _ = 1, n do
+                local d = rnd(1, 4)
+                piece(d, d, rnd(-6, 6), y0 - rnd(0, 12), rnd(30, 45) / 100, 0.04, 0.03, rnd(50, 85) / 100, rnd(0, 6) / 4)
+            end
+        end
+        local function scuff(y0)
+            local angle = (rnd(0, 1) == 0 and 1 or -1) * rnd(50, 80) / 100
+            piece(rnd(10, 16), 1, rnd(-2, 2), y0, 0.9, 0.85, 0.75, 0.22, angle) -- the scraped, lighter line
+            piece(rnd(8, 13), 1, rnd(-2, 2), y0 - 2, 0.05, 0.03, 0.02, 0.45, angle) -- its shadow
+        end
+        local function scorch(y0)
+            for k = 1, 4 do
+                local sz = rnd(4, 9) - k
+                piece(sz + 2, sz, rnd(-3, 3), y0 - rnd(-2, 2), 0.06, 0.04, 0.02, 0.18 + k * 0.08, rnd(0, 6) / 4)
+            end
+        end
+        local function rubbed(y0)
+            for _ = 1, 3 do
+                piece(rnd(5, 9), rnd(4, 7), rnd(-3, 3), y0 - rnd(0, 6), 0.85, 0.8, 0.7, rnd(10, 18) / 100, rnd(0, 6) / 4)
+            end
+        end
+        local y0 = -rnd(10, 26)
+        local kind = ({ "spatter", "scuff", "scorch", "rubbed", "both" })[i] or "spatter"
+        if kind == "spatter" then spatter(rnd(5, 8), y0)
+        elseif kind == "scuff" then scuff(y0)
+        elseif kind == "scorch" then scorch(y0)
+        elseif kind == "rubbed" then rubbed(y0)
+        else spatter(rnd(3, 4), y0); scuff(y0 - rnd(6, 12)) end
+        -- A blade-cut end on some: one clean slash across the end, the cloth running out to a point on one side
+        -- (a column a pixel wide each, a little uneven, as cloth doesn't cut perfectly straight).
+        local cut = CUT[i]
+        if cut then
+            for col = 0, 17 do
+                local share = cut > 0 and (col + 1) / 18 or (18 - col) / 18
+                local len = math.max(0, math.floor(TORN * share) + rnd(-1, 0))
+                if len > 0 then
+                    local strip = r:CreateTexture(nil, "ARTWORK")
+                    strip:SetSize(1, len)
+                    strip:SetPoint("TOPLEFT", body, "BOTTOMLEFT", col, 0)
+                    strip:SetTexture(Theme.MEDIA .. "Page")
+                    strip:SetTexCoord(0.1 * i + col / 250, 0.1 * i + (col + 1) / 250, 0.6, 0.65)
+                    strip:SetVertexColor(c[1] * 1.35, c[2] * 1.35, c[3] * 1.35)
+                end
+            end
+        end
+        -- Otherwise the torn end: the cloth gives out in strips of uneven width and length (one may be torn away
+        -- entirely), and loose threads of every length hang from them at odd places and angles.
+        local x, strips = 0, {}
+        while not cut and x < 18 do
+            local w = math.min(rnd(3, 8), 18 - x)
+            local len = rnd(0, 6) == 0 and 0 or rnd(2, TORN - 2)
+            if len > 0 then
+                local strip = r:CreateTexture(nil, "ARTWORK")
+                strip:SetSize(w, len)
+                strip:SetPoint("TOPLEFT", body, "BOTTOMLEFT", x, 0)
+                strip:SetTexture(Theme.MEDIA .. "Page")
+                strip:SetTexCoord(0.1 * i + x / 250, 0.1 * i + (x + w) / 250, 0.6, 0.65)
+                local shade = rnd(70, 95) / 100 * 1.6 -- darker at the end, each strip its own
+                strip:SetVertexColor(c[1] * shade, c[2] * shade, c[3] * shade)
+            end
+            strips[#strips + 1] = { x = x, w = w, len = len }
+            x = x + w
+        end
+        for _ = 1, cut and 0 or rnd(4, 9) do
+            local st = strips[rnd(1, #strips)]
+            local thread = r:CreateTexture(nil, "ARTWORK")
+            thread:SetSize(rnd(1, 2), rnd(2, 11))
+            thread:SetPoint("TOPLEFT", body, "BOTTOMLEFT", st.x + rnd(0, math.max(st.w - 1, 0)), -math.max(st.len - 1, 0))
+            thread:SetTexture(Theme.MEDIA .. "Page")
+            local shade = rnd(55, 100) / 100 * 1.4
+            thread:SetVertexColor(c[1] * shade, c[2] * shade, c[3] * shade, rnd(55, 95) / 100)
+            if thread.SetRotation then thread:SetRotation((rnd(0, 60) - 30) / 100) end
+        end
         local hl = r:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetAllPoints()
-        hl:SetColorTexture(1, 1, 1, 0.15)
+        hl:SetAllPoints(body)
+        hl:SetColorTexture(1, 1, 1, 0.1)
         r.key = s.key
         r:SetScript("OnClick", function() Hub.Select(s.key) end)
         r:SetScript("OnEnter", function(self)
@@ -1217,41 +1387,90 @@ end
 -- The book on its own, the dark hall when docked in the Legacy window (a book inside that window looked odd).
 local function setLook(book)
     local f = hall
-    for _, r in ipairs({ f.crest, f.who, f.sub, f.content, f.motto, f.side, f.title }) do r:ClearAllPoints() end
+    for _, r in ipairs({ f.crest, f.who, f.name, f.sub, f.content, f.motto, f.side, f.title }) do r:ClearAllPoints() end
     if book then
-        -- Left page, top to bottom: the guild's name, who you are, the contents (two columns), then the open
-        -- section's own controls. Right page: the section itself. (The hall's banner hung over both pages' tops.)
+        -- Left page, top to bottom: who you are, the battle cry, the contents, then the open section's own controls.
+        -- Right page: the section itself. The window's name is on the banner over the spine; the guild's name as the
+        -- left page's heading said much the same twice.
         local mid = 26 + (SPINE - 26) / 2
         f.crest:Hide()
         f.who:Hide()
-        f.title:Show()
-        f.title:SetPoint("TOP", f, "TOPLEFT", mid, -40)
-        f.title:SetWidth(PAGE_W)
-        f.sub:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
+        f.title:Hide()
+        -- Your name, larger, then your totals and the battle cry, evenly spaced down to the rule. (The cry at the
+        -- page's bottom ran into the section's text, at its top into the book's edge.)
+        f.name:Show()
+        f.name:SetPoint("TOP", f, "TOPLEFT", mid, -38)
+        f.name:SetWidth(PAGE_W)
+        f.sub:SetPoint("TOP", f.name, "BOTTOM", 0, -5)
         f.sub:SetWidth(PAGE_W)
         f.sub:SetJustifyH("CENTER")
-        -- The battle cry under who you are, above the rule (at the page's bottom it ran into the section's text,
-        -- at its top into the book's edge).
-        f.motto:SetPoint("TOP", f.sub, "BOTTOM", 0, -5)
+        f.motto:SetPoint("TOP", f.sub, "BOTTOM", 0, -6)
         f.motto:SetWidth(PAGE_W)
-        f.rules[1]:SetPoint("TOP", f, "TOPLEFT", mid, -106)
+        f.rules[1]:SetPoint("TOP", f, "TOPLEFT", mid, -98)
         -- The contents in one column, like a book's table of contents.
         -- Big entries, close together, filling the space between the two rules.
         for i, b in ipairs(f.nav) do
             b:ClearAllPoints()
             b:SetSize(PAGE_W - 40, 42)
-            b:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L + 16, -116 - (i - 1) * 45) -- room for the diamond in front
+            b:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L + 16, -108 - (i - 1) * 45) -- room for the diamond in front
             navSize(b, 34, 16)
         end
-        f.rules[2]:SetPoint("TOP", f, "TOPLEFT", mid, -346)
-        f.side:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L, -360)
+        f.rules[2]:SetPoint("TOP", f, "TOPLEFT", mid, -338)
+        f.side:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L, -352)
         f.side:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", PAGE_L + PAGE_W, 44)
-        f.content:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_R, -48)
-        f.content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -44, 44)
-        if f.chrome.banner then f.chrome.banner:Hide() end
+        f.content:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_R, -34)
+        f.content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -44, 30)
+        -- "Hall of the Kor'kron" on the faction's banner, smaller, on the book's top edge over the spine: what the
+        -- window is called (the guide says "the hall"). At full size it hung over both pages' text.
+        local b = f.chrome.banner
+        if b then
+            local scale = 0.75
+            b:SetScale(scale)
+            b:ClearAllPoints()
+            b:SetPoint("TOP", f, "TOP", 0, 46 / scale)
+            b:SetFrameLevel(f:GetFrameLevel() + 40)
+            b:Show()
+            -- Readable over the banner's art: a heavier outline, a shadow, a lighter gold, and a soft dark band
+            -- behind the words.
+            local t = f.chrome.title
+            if t then
+                Theme.Font(t, 25, true, "OUTLINE")
+                t:SetShadowColor(0, 0, 0, 1)
+                t:SetShadowOffset(2, -2)
+                t:SetTextColor(1, 0.82, 0) -- the game's yellow
+                if not b.backing then
+                    -- Two halves, each dark in the middle and fading out towards its end.
+                    local function half(fromRight)
+                        local h = b:CreateTexture(nil, "ARTWORK", nil, 2)
+                        h:SetPoint("TOP", t, "TOP", 0, 5)
+                        h:SetPoint("BOTTOM", t, "BOTTOM", 0, -5)
+                        if fromRight then
+                            h:SetPoint("LEFT", t, "CENTER", 0, 0)
+                            h:SetPoint("RIGHT", t, "RIGHT", 24, 0)
+                        else
+                            h:SetPoint("LEFT", t, "LEFT", -24, 0)
+                            h:SetPoint("RIGHT", t, "CENTER", 0, 0)
+                        end
+                        h:SetColorTexture(1, 1, 1, 1)
+                        local ok = false
+                        if h.SetGradient and CreateColor then
+                            local dark, clear = CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0)
+                            ok = pcall(h.SetGradient, h, "HORIZONTAL", fromRight and dark or clear, fromRight and clear or dark)
+                        end
+                        if not ok then h:SetColorTexture(0, 0, 0, 0.5) end -- no gradients here: a plain band
+                        return h
+                    end
+                    b.backing = { half(false), half(true) }
+                    function b.backing:Show() for _, h in ipairs(self) do h:Show() end end
+                    function b.backing:Hide() for _, h in ipairs(self) do h:Hide() end end
+                end
+                b.backing:Show()
+            end
+        end
     else
         f.title:Hide()
         f.who:Show()
+        f.name:Hide()
         f.crest:SetShown(not f.docked)
         f.crest:SetPoint("TOPLEFT", 26, -24)
         f.who:SetPoint("TOPLEFT", f.crest, "TOPRIGHT", 10, -4)
@@ -1270,7 +1489,14 @@ local function setLook(book)
         f.content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -24, 22)
         f.motto:SetPoint("BOTTOM", f, "BOTTOMLEFT", 22 + NAV_W / 2, 26)
         f.motto:SetWidth(NAV_W)
-        if f.chrome.banner then f.chrome.banner:SetShown(not f.docked) end
+        local b = f.chrome.banner
+        if b then
+            if b.backing then b.backing:Hide() end
+            b:SetScale(1)
+            b:ClearAllPoints()
+            b:SetPoint("TOP", f, "TOP", 0, 46)
+            b:SetShown(not f.docked)
+        end
     end
     for _, r in ipairs(f.rules) do r:SetShown(book) end
     for i, r in ipairs(f.ribbons) do
@@ -1289,8 +1515,15 @@ local function refreshHeader()
     local guild = IsInGuild() and GetGuildInfo("player")
     hall.who:SetText(KKC.readable(guild) and guild or "Hall of the Kor'kron")
     hall.title:SetText(KKC.readable(guild) and guild or "Hall of the Kor'kron")
+    -- You, all time on this character: your name in your class's color, then your own kills, battles of note and falls
+    -- (as the War Ledger counts them).
     local l = KKC.Ledger.Mine()
-    hall.sub:SetText(Theme.DIM .. ("%s  ~  %d slain  ~  %d battles of note"):format(KKC.me() or "?", l.total, l.engagements) .. "|r")
+    local _, class = UnitClass("player")
+    local sep = Theme.DIM .. "  ~  |r"
+    hall.name:SetText(Theme.ClassLight(class) .. (KKC.me() or "?") .. "|r")
+    hall.sub:SetText(Theme.DIM .. "All time:  |r"
+        .. Theme.GOOD .. l.total .. " slain|r" .. sep .. Theme.HALL_GOLD .. KKC.Ledger.NotableBattles() .. " battles|r"
+        .. sep .. Theme.BAD .. l.fallen .. " fallen|r")
 end
 
 function Hub.Refresh()

@@ -230,6 +230,9 @@ function Ledger.Highlights()
     return out
 end
 
+-- Your battles of note in the log (all time on this character), as the War Ledger counts them.
+function Ledger.NotableBattles() return fromLog().battles end
+
 function Ledger.Tracks()
     local l, c = Ledger.Mine(), fromLog()
     local own = UnitFactionGroup("player") or "Horde"
