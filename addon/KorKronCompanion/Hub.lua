@@ -7,9 +7,9 @@
     War Ledger      your deeds as tiered challenges, Legacy style
     Settings        notifications, guild sync, roll calls in the report, a test battle, diagnostics
 
-  One frame, two places: on its own (/kkc), or docked inside Forever's Legacy window behind our own side tab. When
-  docked it is simply laid over the Legacy content; Blizzard's frames are never changed, only hooked (HookScript), so
-  the addon can't taint them into blocked-action errors.
+  On its own (/kkc and the minimap button). The War Ledger also shows inside Forever's Legacy window, as one of its
+  challenge categories (LegacyLedger.lua). The hall's "dark" layout (setLook(false), Layout(book = false)) was for
+  the hall docked in that window behind a side tab; the tab is gone, the layout code stays for now.
 ]]
 
 local _, KKC = ...
@@ -23,7 +23,7 @@ local SPINE = WIDTH / 2
 local PAGE_L, PAGE_R = 44, SPINE + 26 -- where text starts on the left and the right page
 local PAGE_W = SPINE - 26 - 44 - 18  -- text width on a page (430)
 local NAV_W = 196
-local hall, tab
+local hall
 local current = { section = "chronicle", period = "week" }
 
 local SECTIONS = {
@@ -66,10 +66,9 @@ local function headline(e)
     -- A battle more raids of the guild fought in (guild sync): "3 raids".
     local host = KKC.Host(e)
     local raids = host and (Theme.DIM .. "~|r " .. Theme.HALL_GOLD .. #host.raids .. " raids|r") or nil
-    if e.campaign then
-        return Theme.HALL_GOLD .. KKC.Campaign.Name(e) .. "|r  " .. colored(e) .. "  " .. Theme.DIM .. "~ until " .. date("%H:%M", e.stop) .. "|r"
-            .. (raids and ("  " .. raids) or "")
-    end
+    -- A campaign's row is marked by its card and its +/-, its name and end are in the tooltip: the row keeps the room for
+    -- the numbers (with "Campaign" and "~ until 21:10" too they were cut off).
+    if e.campaign then return colored(e) .. (raids and ("  " .. raids) or "") end
     local tags = {}
     if host then tags[#tags + 1] = Theme.HALL_GOLD .. #host.raids .. " raids|r" end
     if e.minor then tags[#tags + 1] = Theme.DIM .. "skirmish|r" end
@@ -96,32 +95,6 @@ end
 local function clamp(p, total, visible)
     p.offset = math.max(0, math.min(p.offset or 0, total - visible))
     return p.offset
-end
-
--- Text that scrolls (wheel or the bar) when it is longer than its box.
-local function scrollText(parent, size)
-    local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-    local child = CreateFrame("Frame", nil, scroll)
-    child:SetSize(400, 10)
-    scroll:SetScrollChild(child)
-    local fs = Theme.LightText(child, size)
-    fs:SetPoint("TOPLEFT", 0, 0)
-    fs:SetJustifyV("TOP")
-    fs:SetSpacing(4)
-    local function relayout()
-        local w = KKC.try(scroll.GetWidth, scroll)
-        if type(w) == "number" and w > 0 then child:SetWidth(w); fs:SetWidth(w) end
-        local h = KKC.try(fs.GetStringHeight, fs)
-        child:SetHeight((type(h) == "number" and h or 0) + 8)
-    end
-    scroll:SetScript("OnSizeChanged", relayout)
-    function scroll:SetBody(text)
-        fs:SetText(text)
-        relayout()
-        KKC.try(self.SetVerticalScroll, self, 0)
-    end
-    scroll.text = fs
-    return scroll
 end
 
 -- Puts a region at one anchor, dropping the old ones.
@@ -223,15 +196,38 @@ local function battleRow(parent, width)
     b.card:SetPoint("TOPLEFT", 0, 1)
     b.card:SetPoint("BOTTOMRIGHT", 0, -1)
     b.card:SetColorTexture(0.24, 0.17, 0.10, 0.95)
-    b:SetScript("OnClick", function(self) if self.engagement then KKC.UI.ShowCard(self.engagement) end end)
+    -- A campaign's +/- at its left edge: folds its fights away or shows them again (b.onToggle, set by the list).
+    b.toggle = CreateFrame("Button", nil, b)
+    b.toggle:SetSize(14, 14)
+    b.toggle:SetPoint("LEFT", 3, 0)
+    b.toggle:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight")
+    b.toggle:SetScript("OnClick", function() if b.onToggle and b.engagement then b.onToggle(b.engagement) end end)
+    b.toggle:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(b.collapsed and "Show this outing's fights" or "Fold this outing's fights away", 1, 0.82, 0)
+        GameTooltip:Show()
+    end)
+    b.toggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b.toggle:Hide()
+    b:SetScript("OnClick", function(self)
+        if self.engagement then KKC.UI.ShowCard(self.engagement)
+        elseif self.dayKey and self.onDayToggle then self.onDayToggle(self.dayKey) end
+    end)
     -- What a click opens, under the mouse.
     b:SetScript("OnEnter", function(self)
         local e = self.engagement
+        if not e and self.dayKey then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.collapsed and "Show this day's battles" or "Fold this day's battles away", 1, 0.82, 0)
+            GameTooltip:Show()
+            return
+        end
         if not e then return end
         self.arrow:SetTextColor(1, 0.82, 0)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(e.campaign and (KKC.Campaign.Name(e) .. ": " .. KKC.Report.Place(e)) or KKC.Report.Place(e), 1, 0.82, 0)
         if e.campaign then
+            GameTooltip:AddLine(("%s to %s, %d clashes"):format(date("%H:%M", e.start), date("%H:%M", e.stop), e.fights or 0), 0.8, 0.8, 0.8)
             GameTooltip:AddLine("Click: the battle card for the whole outing, one report for the night (with its roll calls).", 1, 1, 1, true)
         elseif self.inCampaign then
             GameTooltip:AddLine("Click: the battle card for just this fight. The row above it is the whole outing.", 1, 1, 1, true)
@@ -246,21 +242,31 @@ local function battleRow(parent, width)
         GameTooltip:Hide()
     end)
     -- A diary line: the time, then the battle. inCampaign: a fight under its campaign, indented. day: instead a day's
-    -- heading ("WEDNESDAY 11 NOVEMBER").
-    function b:Set(e, inCampaign, day)
-        self.engagement, self.inCampaign = e, inCampaign
+    -- heading ("WEDNESDAY 11 NOVEMBER"). collapsed: a campaign or day whose battles are folded away (a campaign's +/-
+    -- shows +, a day's diamond dims). dayKey: the day a heading folds; folded: how many battles it holds.
+    function b:Set(e, inCampaign, day, collapsed, dayKey, folded)
+        e, day = e or nil, day or nil -- false on an empty row
+        self.engagement, self.inCampaign, self.collapsed, self.dayKey = e, inCampaign, collapsed, day and dayKey or nil
+        local folds = e and e.campaign and true or false
+        self.toggle:SetShown(folds)
+        if folds then
+            self.toggle:SetNormalTexture(collapsed and "Interface\\Buttons\\UI-PlusButton-Up" or "Interface\\Buttons\\UI-MinusButton-Up")
+            self.toggle:SetPushedTexture(collapsed and "Interface\\Buttons\\UI-PlusButton-Down" or "Interface\\Buttons\\UI-MinusButton-Down")
+        end
         if not (e or day) then return self:Hide() end
-        self:EnableMouse(e ~= nil) -- a day's heading isn't clickable, so it doesn't light up either
+        self:EnableMouse(true) -- a battle opens its card, a day's heading folds the day
         self.arrow:SetShown(e ~= nil)
         local card = e and e.campaign and Theme.book
         for _, t in ipairs({ self.card, self.shadow }) do t:SetShown(card or false) end
         self.diamond:SetShown(day ~= nil)
-        self.day:SetText(day or "")
+        self.diamond:SetAlpha(collapsed and 0.4 or 1)
+        self.day:SetText(day and (day .. (collapsed and folded and (Theme.DIM .. ("   (%d %s folded away)"):format(folded,
+            folded == 1 and "battle" or "battles") .. "|r") or "")) or "")
         if day then
             self.when:SetText("")
             self.what:SetText("")
         else
-            self.when:SetText(Theme.DIM .. (inCampaign and "      " or "  ") .. date("%H:%M", e.start) .. "|r")
+            self.when:SetText(Theme.DIM .. ((inCampaign or e.campaign) and "      " or "  ") .. date("%H:%M", e.start) .. "|r")
             self.what:SetText((inCampaign and "    " or "") .. headline(e))
         end
         self:Show()
@@ -271,6 +277,189 @@ end
 -- ------------------------------------------------------------------------------------------------
 -- Chronicle (and From the field, which is the same page over the guild feed)
 -- ------------------------------------------------------------------------------------------------
+
+-- The Chronicle's details as sections (Summary.Sections): a heading in the game's yellow, then its entries in two
+-- columns, the name on the left and the number on the right, a thin line between sections. A note (a plain sentence)
+-- runs across the width. Scrolls when longer than its frame.
+local ENTRY_H, HEAD_H = 17, 20
+local function sectionList(parent)
+    local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    local child = CreateFrame("Frame", nil, scroll)
+    child:SetSize(400, 10)
+    scroll:SetScrollChild(child)
+    local pools = { head = {}, name = {}, value = {}, note = {}, line = {}, divider = {} }
+    local used = {}
+    local function take(kind, make)
+        used[kind] = (used[kind] or 0) + 1
+        local r = pools[kind][used[kind]]
+        if not r then r = make(); pools[kind][used[kind]] = r end
+        r:ClearAllPoints()
+        r:Show()
+        return r
+    end
+    local function text(size, justify, title)
+        return function()
+            local fs = Theme.LightText(child, size, justify, title)
+            fs:SetWordWrap(false)
+            return fs
+        end
+    end
+    local function line()
+        local t = child:CreateTexture(nil, "ARTWORK")
+        t:SetHeight(1)
+        t:SetColorTexture(0.62, 0.52, 0.36, 0.25)
+        return t
+    end
+    local function height(fs, fallback)
+        local h = KKC.try(fs.GetStringHeight, fs)
+        return type(h) == "number" and h > 0 and h or fallback
+    end
+
+    function scroll:Set(sections)
+        self.sections = sections
+        local w = KKC.try(self.GetWidth, self)
+        w = type(w) == "number" and w > 0 and w or 400
+        child:SetWidth(w)
+        used = {}
+        -- Two halves split by a thin upright line in the middle of the page: names centered in the left half,
+        -- their numbers centered in the right one.
+        local mid = math.floor(w / 2)
+        local y = 4
+        for i, sec in ipairs(sections) do
+            if i > 1 then
+                local l = take("line", line)
+                l:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -y - 4)
+                l:SetPoint("TOPRIGHT", child, "TOPLEFT", w, -y - 4)
+                y = y + 10
+            end
+            if sec.note then
+                local fs = take("note", function()
+                    local n = Theme.LightText(child, 12)
+                    n:SetJustifyV("TOP")
+                    return n
+                end)
+                fs:SetPoint("TOPLEFT", child, "TOPLEFT", 4, -y)
+                fs:SetWidth(w - 8)
+                fs:SetText(Theme.DIM .. sec.note .. "|r")
+                y = y + height(fs, 16) + 4
+            else
+                -- The heading in the plain font (the decorative one is for headers that carry no data), in yellow.
+                local head = take("head", text(13, "CENTER"))
+                head:SetPoint("TOPLEFT", child, "TOPLEFT", 4, -y)
+                head:SetWidth(w - 8)
+                head:SetText(Theme.HALL_GOLD .. sec.title .. "|r")
+                y = y + HEAD_H
+                local first = y
+                for _, e in ipairs(sec.entries) do
+                    local name = take("name", text(12, "CENTER"))
+                    name:SetPoint("TOPLEFT", child, "TOPLEFT", 4, -y)
+                    name:SetWidth(mid - 4 - 10)
+                    name:SetText(e[1])
+                    local value = take("value", text(12, "CENTER"))
+                    value:SetPoint("TOPLEFT", child, "TOPLEFT", mid + 10, -y)
+                    value:SetWidth(w - mid - 10 - 4)
+                    value:SetText(e[2])
+                    y = y + ENTRY_H
+                end
+                if #sec.entries > 0 then
+                    local d = take("divider", function()
+                        local t = child:CreateTexture(nil, "ARTWORK")
+                        t:SetWidth(1)
+                        t:SetColorTexture(0.62, 0.52, 0.36, 0.35)
+                        return t
+                    end)
+                    d:SetPoint("TOP", child, "TOPLEFT", mid, -first + 1)
+                    d:SetPoint("BOTTOM", child, "TOPLEFT", mid, -y + 3)
+                end
+            end
+        end
+        for kind, pool in pairs(pools) do
+            for i = (used[kind] or 0) + 1, #pool do pool[i]:Hide() end
+        end
+        child:SetHeight(y + 6)
+        KKC.try(self.SetVerticalScroll, self, 0)
+    end
+    scroll:SetScript("OnSizeChanged", function(self) if self.sections then self:Set(self.sections) end end)
+    return scroll
+end
+
+-- The standing of the guilds, Overlord's rating as a podium: the first in the middle and a little higher, the second
+-- and third beside it, each under its faction's emblem. Our guild further down gets a line below; without a rating to
+-- read, one quiet line in the hall's voice (KKC.Overlord.QuietLine).
+local STANDING_H = 142
+local PODIUM = { { x = 0, y = -40, size = 46 }, { x = -1, y = -50, size = 38 }, { x = 1, y = -50, size = 38 } }
+local function ordinal(n)
+    local tens, ones = n % 100, n % 10
+    local suffix = (tens >= 11 and tens <= 13) and "th" or (ones == 1 and "st" or ones == 2 and "nd" or ones == 3 and "rd" or "th")
+    return n .. suffix
+end
+local function points(n) return BreakUpLargeNumbers and BreakUpLargeNumbers(n) or tostring(n) end
+local function standingBox(parent)
+    local box = Theme.Inset(parent, true)
+    box:SetHeight(STANDING_H)
+    box.title = Theme.LightText(box, 15, "CENTER", true)
+    box.title:SetPoint("TOP", 0, -9)
+    box.title:SetText("Standing of the guilds")
+    box.source = Theme.LightText(box, 10, "CENTER")
+    box.source:SetPoint("TOP", box.title, "BOTTOM", 0, -2) -- where the standing comes from, under the title
+    box.slots = {}
+    for i, place in ipairs(PODIUM) do
+        local slot = CreateFrame("Frame", nil, box)
+        slot:SetSize(140, 84)
+        slot.place = place
+        slot.emblem = slot:CreateTexture(nil, "ARTWORK")
+        slot.emblem:SetSize(place.size, place.size)
+        slot.emblem:SetPoint("TOP", 0, 0)
+        slot.rank = slot:CreateFontString(nil, "OVERLAY")
+        Theme.Font(slot.rank, i == 1 and 17 or 15, false, "OUTLINE") -- data: the plain font
+        slot.rank:SetTextColor(1, 0.82, 0.25)
+        slot.rank:SetPoint("BOTTOMRIGHT", slot.emblem, "BOTTOMRIGHT", 8, -2)
+        slot.name = Theme.LightText(slot, i == 1 and 14 or 13, "CENTER", false, true)
+        slot.name:SetPoint("TOP", slot.emblem, "BOTTOM", 0, -3)
+        slot.name:SetWidth(140)
+        slot.name:SetWordWrap(false)
+        slot.points = Theme.LightText(slot, 11, "CENTER")
+        slot.points:SetPoint("TOP", slot.name, "BOTTOM", 0, -2)
+        box.slots[i] = slot
+    end
+    box.note = Theme.LightText(box, 11, "CENTER")
+    box.note:SetPoint("BOTTOMLEFT", 12, 8)
+    box.note:SetPoint("BOTTOMRIGHT", -12, 8)
+    box.quiet = Theme.LightText(box, 12, "CENTER")
+    box.quiet:SetPoint("LEFT", 24, -8)
+    box.quiet:SetPoint("RIGHT", -24, -8)
+
+    function box:Refresh()
+        local w = KKC.try(self.GetWidth, self)
+        w = type(w) == "number" and w > 0 and w or PAGE_W
+        local O = KKC.Overlord
+        local top = O and O.TopGuilds(3)
+        local status = not top and O and (O.RatingStatus() or "unreadable")
+        self.source:SetText(top and (Theme.DIM .. "all of Forever, from Overlord|r") or "")
+        self.quiet:SetText(status and (Theme.DIM .. O.QuietLine(status) .. "|r") or "")
+        for i, slot in ipairs(self.slots) do
+            local g = top and top[i]
+            if g and g.rank == i then
+                slot:ClearAllPoints()
+                slot:SetPoint("TOP", self, "TOP", slot.place.x * w / 3, slot.place.y)
+                if not Theme.Atlas(slot.emblem, g.faction == "Alliance" and "AllianceEmblem" or "HordeEmblem") then
+                    slot.emblem:SetTexture(g.faction == "Alliance" and "Interface\\Icons\\INV_BannerPVP_02" or "Interface\\Icons\\INV_BannerPVP_01")
+                end
+                slot.rank:SetText(i)
+                local color = g.faction == "Alliance" and "|cff6fa8ff" or g.faction == "Horde" and "|cffff6a52" or "|cffffffff"
+                slot.name:SetText(color .. g.guild .. "|r")
+                slot.points:SetText(Theme.DIM .. points(g.points) .. " points|r")
+                slot:Show()
+            else
+                slot:Hide()
+            end
+        end
+        local ours
+        for _, g in ipairs(top or {}) do if g.mine and g.rank > 3 then ours = g end end
+        self.note:SetText(ours and (Theme.DIM .. ("%s stand %s, with %s points."):format(ours.guild, ordinal(ours.rank), points(ours.points)) .. "|r") or "")
+    end
+    return box
+end
 
 local TILES = {
     { key = "battles", label = "Battles" },
@@ -313,11 +502,13 @@ local function buildChronicle(parent, guild)
 
     -- The details take all the room down to the buttons and scroll when a long week doesn't fit. (Its battles are
     -- under Battles: a list here too didn't fit.)
+    -- Above the details, on your own Chronicle: the standing of the guilds (Overlord).
+    if not guild then p.standing = standingBox(p) end
     local details = Theme.Inset(p)
     p.details = details
-    p.body = scrollText(details, 12)
-    p.body:SetPoint("TOPLEFT", 12, -10)
-    p.body:SetPoint("BOTTOMRIGHT", -30, 8)
+    p.rows = sectionList(details)
+    p.rows:SetPoint("TOPLEFT", 10, -8)
+    p.rows:SetPoint("BOTTOMRIGHT", -30, 8)
 
     p.copy = Theme.HallButton(p, "Scribe chronicle", 150, 26, "Interface\\Icons\\INV_Scroll_03",
         "Copy this chronicle as text, to paste in Discord or keep.", function()
@@ -347,8 +538,14 @@ local function buildChronicle(parent, guild)
             end
         end
         self.details:ClearAllPoints()
+        if self.standing then
+            self.standing:SetShown(book)
+            self.standing:ClearAllPoints()
+            self.standing:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -4)
+            self.standing:SetPoint("RIGHT", self, "RIGHT", 0, 0)
+        end
         if book then
-            self.details:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -4)
+            self.details:SetPoint("TOPLEFT", self, "TOPLEFT", 0, self.standing and -(STANDING_H + 12) or -4)
             self.details:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 4)
             at(self.copy, "BOTTOMLEFT", side, "BOTTOMLEFT", 0, 0)
             -- The two buttons share the page's width (just one, filling it, on From the field).
@@ -368,14 +565,19 @@ local function buildChronicle(parent, guild)
         self.data, self.label = data, label
         self.text = KKC.Summary.Text(data, label, guild)
         self.title = (guild and "Word from the Field - " or "War Chronicle - ") .. label
-        local heading, span, body = KKC.Summary.Parts(data, label, guild, true)
+        local heading, span = KKC.Summary.Parts(data, label, guild, true)
         self.heading:SetText(heading)
+        -- How long the fighting took goes with the dates (the tally has the rest of the "Battles" line).
+        if (data.seconds or 0) > 0 then span = span .. "  ~  " .. KKC.duration(data.seconds) .. " of battle" end
         self.span:SetText(Theme.DIM .. span .. "|r")
+        if self.standing then self.standing:Refresh() end
+        -- The details as sections (Summary.Sections; the tally on the left page has the battles and the first blow).
         if guild and not KKC.settings().sync then
-            body = Theme.DIM .. "Guild sync is off, so no word comes from the field. Turn it on under Settings to hear "
-                .. "of battles guildies with the addon fight without you.|r"
+            self.rows:Set({ { note = "Guild sync is off, so no word comes from the field. Turn it on under Settings to "
+                .. "hear of battles guildies with the addon fight without you." } })
+        else
+            self.rows:Set(KKC.Summary.Sections(data, guild))
         end
-        self.body:SetBody(body)
         self.tiles.battles.value:SetText(data.engagements)
         self.tiles.kills.value:SetText(Theme.GOOD .. data.kills .. "|r")
         self.tiles.fallen.value:SetText(Theme.BAD .. data.fallen .. "|r")
@@ -384,7 +586,8 @@ local function buildChronicle(parent, guild)
         self.tally:Set({
             { "Battles", data.engagements .. Theme.DIM .. "  (" .. data.notable .. " of note)|r" },
             { "Foes slain", Theme.GOOD .. data.kills .. "|r" },
-            { "Kor'kron fallen", Theme.BAD .. data.fallen .. "|r" },
+            { "Kor'kron fallen", Theme.BAD .. data.fallen .. "|r" .. ((not guild and (data.myDeaths or 0) > 0)
+                and (Theme.DIM .. ("  (you %d)"):format(data.myDeaths) .. "|r") or "") },
             { "First blow, ours / theirs", ("%s%d|r / %s%d|r"):format(Theme.GOOD, data.struck, Theme.BAD, data.ambushed) },
         })
 
@@ -403,6 +606,8 @@ local function buildBattles(parent)
     p:SetAllPoints()
     p:Hide()
     p.offset, p.showMinor = 0, false
+    p.collapsed = {} -- campaign ids folded away (until /reload)
+    p.collapsedDays = {} -- days ("2026-11-14") folded away
 
     -- The same periods as the Chronicle (and the same choice: switching sections keeps it).
     p.periods = {}
@@ -424,6 +629,14 @@ local function buildBattles(parent)
     for i = 1, BATTLE_ROWS do
         local r = battleRow(box, 610)
         r:SetPoint("TOPLEFT", 8, -8 - (i - 1) * 21)
+        r.onToggle = function(e)
+            p.collapsed[e.id] = not p.collapsed[e.id] or nil
+            p:Refresh()
+        end
+        r.onDayToggle = function(key)
+            p.collapsedDays[key] = not p.collapsedDays[key] or nil
+            p:Refresh()
+        end
         p.rows[i] = r
     end
 
@@ -431,7 +644,7 @@ local function buildBattles(parent)
     p.box = box
     -- Above the list in the book: the rows are what you click.
     p.hint = Theme.LightText(p, 12, "LEFT")
-    dim(p.hint, "Click a battle to open its battle card. A campaign row opens the whole outing.")
+    dim(p.hint, "Click a battle for its battle card, a campaign for the whole outing.")
     p.newer = Theme.HallButton(p, "< Newer", 100, 26, nil, nil, function() p.offset = p.offset - (p.visible or 10); p:Refresh() end)
     p.older = Theme.HallButton(p, "Older >", 100, 26, nil, nil, function() p.offset = p.offset + (p.visible or 10); p:Refresh() end)
     p.older:SetPoint("LEFT", p.newer, "RIGHT", 8, 0)
@@ -451,6 +664,8 @@ local function buildBattles(parent)
         self.box:ClearAllPoints()
         if book then
             at(self.hint, "TOPLEFT", self, "TOPLEFT", 4, -4)
+            self.hint:SetWidth(PAGE_W - 8)
+            self.hint:SetWordWrap(false)
             self.hint:Show()
             self.box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -22)
             self.box:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 4)
@@ -492,7 +707,7 @@ local function buildBattles(parent)
             local key = date("%Y-%m-%d", t)
             if key ~= lastDay then
                 lastDay = key
-                list[#list + 1] = { day = date("%A %d %B", t):upper() }
+                list[#list + 1] = { day = date("%A %d %B", t):upper(), key = key }
             end
         end
         for _, c in ipairs(KKC.Campaign.Group(KKC.db.log)) do
@@ -508,18 +723,40 @@ local function buildBattles(parent)
             if #c.fights > 1 and #fights > 0 then campaigns = campaigns + 1 end
             if #fights > 0 then dayOf(fights[#fights].start) end
             if #c.fights > 1 and #fights > 0 then
-                list[#list + 1] = { e = KKC.Campaign.View(c) }
-                for _, e in ipairs(fights) do list[#list + 1] = { e = e, inCampaign = true } end
+                local view = KKC.Campaign.View(c)
+                local folded = self.collapsed[view.id] and true or false
+                list[#list + 1] = { e = view, collapsed = folded }
+                if not folded then
+                    for _, e in ipairs(fights) do list[#list + 1] = { e = e, inCampaign = true } end
+                end
             elseif #fights > 0 then
                 list[#list + 1] = { e = fights[1] }
             end
         end
+        -- Folded days: their heading stays, with how many battles are under it; the rest is left out.
+        local shown, heading = {}, nil
+        for _, item in ipairs(list) do
+            if item.day then
+                heading = item
+                item.collapsed = self.collapsedDays[item.key] and true or false
+                item.folded = 0
+                shown[#shown + 1] = item
+            elseif heading and heading.collapsed then
+                -- Count fights: a campaign's own rows, or its clashes when the campaign is folded too.
+                if not (item.e and item.e.campaign) then heading.folded = heading.folded + 1
+                elseif item.collapsed then heading.folded = heading.folded + (item.e.fights or 0) end
+            else
+                shown[#shown + 1] = item
+            end
+        end
+        list = shown
         local visible = fit(self.box, 8, 8, 21, 18, BATTLE_ROWS)
         self.visible = visible
         local offset = clamp(self, #list, visible)
         for i, r in ipairs(self.rows) do
             local item = i <= visible and list[offset + i]
-            r:Set(item and item.e, item and item.inCampaign, item and item.day)
+            r:Set(item and item.e, item and item.inCampaign, item and item.day, item and item.collapsed,
+                item and item.key, item and item.folded)
         end
         self.newer:SetEnabled(offset > 0)
         self.older:SetEnabled(offset + visible < #list)
@@ -538,88 +775,125 @@ local function buildBattles(parent)
 end
 
 -- ------------------------------------------------------------------------------------------------
--- War Ledger: tiered challenges, Legacy style
+-- War Ledger: the Legacy window's cards (LegacyLedger.lua): the fun numbers, then the tiered challenges
 -- ------------------------------------------------------------------------------------------------
 
-local LEDGER_ROWS = 10 -- built; as many as fit are shown
+local CARD_GAP = 6
 
 local function buildLedger(parent)
     local p = CreateFrame("Frame", nil, parent)
     p:SetAllPoints()
     p:Hide()
-    p.offset = 0
-    scrollable(p, p)
+    p:SetScript("OnSizeChanged", function(self) if self:IsShown() then self:Refresh() end end)
 
     p.heading = Theme.LightText(p, 19, "LEFT", true)
     p.heading:SetText("War Ledger")
     p.sub = Theme.LightText(p, 11)
 
-    p.rows = {}
-    for i = 1, LEDGER_ROWS do
-        local row = Theme.Inset(p)
-        row:SetHeight(58)
-        row.icon = row:CreateTexture(nil, "ARTWORK")
-        row.icon:SetSize(40, 40)
-        row.icon:SetPoint("LEFT", 9, 0)
-        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        row.title = Theme.LightText(row, 15, "LEFT", true)
-        row.title:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 12, -2)
-        row.bar = Theme.Bar(row, 160, 16)
-        row.bar:SetPoint("RIGHT", -14, 4)
-        row.title:SetPoint("RIGHT", row.bar, "LEFT", -10, 0)
-        row.title:SetWordWrap(false)
-        row.text = Theme.LightText(row, 12)
-        row.text:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -4)
-        row.text:SetPoint("RIGHT", row.bar, "LEFT", -10, 0)
-        row.tier = Theme.LightText(row, 11, "CENTER")
-        row.tier:SetPoint("TOP", row.bar, "BOTTOM", 0, -3)
-        p.rows[i] = row
+    -- All the cards in one column that scrolls (wheel or the small bar on the right).
+    p.scroll = CreateFrame("ScrollFrame", nil, p, "UIPanelScrollFrameTemplate")
+    p.child = CreateFrame("Frame", nil, p.scroll)
+    p.child:SetSize(400, 10)
+    p.scroll:SetScrollChild(p.child)
+    p.cards = {}
+
+    local function card(i)
+        local f = p.cards[i]
+        if not f then
+            f = CreateFrame("Frame", nil, p.child)
+            KKC.LegacyLedger.Cards.Build(f)
+            p.cards[i] = f
+        end
+        return f
     end
 
-    p.prev = Theme.HallButton(p, "< Previous", 110, 26, nil, nil, function() p.offset = p.offset - (p.visible or 6); p:Refresh() end)
-    p.next = Theme.HallButton(p, "Next >", 110, 26, nil, nil, function() p.offset = p.offset + (p.visible or 6); p:Refresh() end)
-    p.next:SetPoint("LEFT", p.prev, "RIGHT", 8, 0)
-    p.pageText = Theme.LightText(p, 12)
-    p.pageText:SetPoint("LEFT", p.next, "RIGHT", 12, 0)
+    -- The left page: where you stand in the Ledger (Ledger.Standing). Data in the plain font, the labels dim.
+    local st = {}
+    p.standing = st
+    local function label(text)
+        local fs = Theme.LightText(p, 12)
+        fs:SetText(Theme.DIM .. text .. "|r")
+        return fs
+    end
+    st.deedsLabel = label("Deeds done (tiers earned of all)")
+    st.bar = Theme.Bar(p, PAGE_W, 14) -- shows "16 / 107" itself
+    st.closestLabel = label("Closest to glory")
+    st.rows = {}
+    for i = 1, 3 do
+        local r = {}
+        r.icon = p:CreateTexture(nil, "ARTWORK")
+        r.icon:SetSize(24, 24)
+        r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        r.name = Theme.LightText(p, 13, "LEFT")
+        r.name:SetWidth(PAGE_W - 120)
+        r.name:SetWordWrap(false)
+        r.progress = Theme.LightText(p, 12, "RIGHT")
+        st.rows[i] = r
+    end
+    local stParts = { st.deedsLabel, st.bar, st.closestLabel }
+    for _, r in ipairs(st.rows) do stParts[#stParts + 1] = r.icon; stParts[#stParts + 1] = r.name; stParts[#stParts + 1] = r.progress end
 
-    -- Book: heading, totals and paging on the left page; the challenges fill the right page.
+    -- Book: heading, totals and your standing on the left page; the cards fill the right page.
     function p:Layout(book, side)
         layoutHeading(self, book, side, self.sub, -2)
-        self.top, self.bottom = book and 4 or 44, book and 4 or 34
-        for i, row in ipairs(self.rows) do
-            row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -self.top - (i - 1) * 64)
-            row:SetPoint("RIGHT", self, "RIGHT", 0, 0)
+        for _, part in ipairs(stParts) do part:SetShown(book) end
+        if book then
+            -- One under the other, starting under the totals line, so nothing can land on anything else.
+            at(st.deedsLabel, "TOPLEFT", self.sub, "BOTTOMLEFT", 0, -16)
+            at(st.bar, "TOPLEFT", st.deedsLabel, "BOTTOMLEFT", 0, -6)
+            at(st.closestLabel, "TOPLEFT", st.bar, "BOTTOMLEFT", 0, -14)
+            for i, r in ipairs(st.rows) do
+                at(r.icon, "TOPLEFT", st.closestLabel, "BOTTOMLEFT", 0, -6 - (i - 1) * 27)
+                at(r.name, "LEFT", r.icon, "RIGHT", 10, 0)
+                at(r.progress, "RIGHT", r.icon, "LEFT", PAGE_W, 0) -- at the page's right edge
+            end
         end
-        at(self.prev, "BOTTOMLEFT", book and side or self, "BOTTOMLEFT", 0, 0)
+        local top, bottom = book and 4 or 44, book and 4 or 8
+        self.scroll:ClearAllPoints()
+        self.scroll:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -top)
+        self.scroll:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", -24, bottom) -- the bar sits in those 24
     end
 
     function p:Refresh()
-        local tracks = KKC.Ledger.Tracks()
+        local C = KKC.LegacyLedger and KKC.LegacyLedger.Cards
+        if not C then return end
         local l = KKC.Ledger.Mine()
         self.sub:SetText(Theme.DIM .. ("%s: %d slain, %d unique foes, fallen %d times. Only your own killing blows count.")
             :format(KKC.me() or "?", l.total, KKC.count(l.enemy), l.fallen) .. "|r")
-        local visible = fit(self, self.top or 44, self.bottom or 34, 64, 6, LEDGER_ROWS)
-        self.visible = visible
-        local offset = clamp(self, #tracks, visible)
-        for i, row in ipairs(self.rows) do
-            local t = i <= visible and tracks[offset + i]
+        local tracks = KKC.Ledger.Tracks()
+        local items = { { summary = KKC.Ledger.Highlights() } }
+        for _, t in ipairs(tracks) do items[#items + 1] = { track = t } end
+        self.items = items
+        -- Your standing, on the left page.
+        local standing = KKC.Ledger.Standing(tracks)
+        st.bar:SetProgress(standing.earned, math.max(standing.total, 1))
+        st.closestLabel:SetShown(#standing.closest > 0 and st.deedsLabel:IsShown())
+        for i, r in ipairs(st.rows) do
+            local t = standing.closest[i]
+            local show = t ~= nil and st.deedsLabel:IsShown()
+            r.icon:SetShown(show); r.name:SetShown(show); r.progress:SetShown(show)
             if t then
-                row.icon:SetTexture(t.icon)
-                row.icon:SetDesaturated(t.tier == 0)
-                -- Done: gold in the dark hall (in the book every title is already the game's yellow).
-                row.title:SetText((t.complete and not Theme.book) and (Theme.HALL_GOLD .. t.title .. "|r") or t.title)
-                row.text:SetText(t.text)
-                row.bar:SetProgress(t.value, t.goal)
-                row.tier:SetText(Theme.DIM .. (t.complete and "Every tier earned" or ("Tier %d of %d"):format(t.tier + 1, t.tiers)) .. "|r")
-                row:Show()
-            else
-                row:Hide()
+                r.icon:SetTexture(t.icon)
+                r.name:SetText(t.title)
+                r.progress:SetText(Theme.DIM .. ("%d / %d"):format(t.value, t.goal) .. "|r")
             end
         end
-        self.prev:SetEnabled(offset > 0)
-        self.next:SetEnabled(offset + visible < #tracks)
-        self.pageText:SetText(Theme.DIM .. ("%d-%d of %d challenges"):format(offset + 1, math.min(#tracks, offset + visible), #tracks) .. "|r")
+        local w = KKC.try(self.scroll.GetWidth, self.scroll)
+        local width = type(w) == "number" and w > 0 and w or 406
+        self.child:SetWidth(width)
+        local y = 0
+        for i, item in ipairs(items) do
+            local h = item.summary and C.SummaryHeight(#item.summary, width) or C.HEIGHT
+            local f = card(i)
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
+            f:SetSize(width, h)
+            if item.summary then C.Summary(f, item.summary, width) else C.Challenge(f, item.track, width) end
+            f:Show()
+            y = y + h + CARD_GAP
+        end
+        for i = #items + 1, #self.cards do self.cards[i]:Hide() end
+        self.child:SetHeight(math.max(y, 10))
     end
     return p
 end
@@ -643,8 +917,8 @@ local function buildSettings(parent)
     p.heading = Theme.LightText(p, 19, "LEFT", true)
     p.heading:SetText("Settings")
     p.intro = Theme.LightText(p, 12)
-    dim(p.intro, "How you hear of battles, what is shared with the guild, and "
-        .. "a test battle to see it all without a fight.")
+    dim(p.intro, "How you hear of battles, what is shared with the guild and read from Overlord, and how the hall "
+        .. "looks. Each button on the right switches its setting; the text beside it says what it does now.")
 
     p.rowList = {}
     local function row(title, buttonLabel, onClick)
@@ -660,6 +934,7 @@ local function buildSettings(parent)
         box.button:SetPoint("RIGHT", -14, 0)
         return box
     end
+    local function flip(key) return function() KKC.settings()[key] = not KKC.settings()[key]; p:Refresh() end end
 
     p.notify = row("Announcing battles", "Change", function()
         local set = KKC.settings()
@@ -668,54 +943,104 @@ local function buildSettings(parent)
         set.notify = NOTIFY_ORDER[i % #NOTIFY_ORDER + 1]
         p:Refresh()
     end)
-    p.all = row("Who is told", "Change", function()
-        KKC.settings().promptAll = not KKC.settings().promptAll
+    p.all = row("Who is told", "Change", flip("promptAll"))
+    p.sync = row("Guild sync", "Change", flip("sync"))
+    p.rollReport = row("Roll calls in the report", "Change", flip("rollcallsInReport"))
+    p.overlord = row("Overlord", "Change", function()
+        local set = KKC.settings()
+        -- On unless switched off (nil: on).
+        if set.overlord == false then set.overlord = nil else set.overlord = false end
+        p:Refresh()
+        Hub.Refresh()
+    end)
+    p.minimap = row("Minimap button", "Change", function()
+        local m = KKC.settings().minimap
+        m.hide = not m.hide
+        if KKC.MinimapButton then KKC.MinimapButton.Refresh() end
         p:Refresh()
     end)
-    p.sync = row("Guild sync", "Change", function()
-        KKC.settings().sync = not KKC.settings().sync
+    p.size = row("Size of the hall", "Usual size", function()
+        KKC.settings().hallScale = nil
+        if hall then hall:SetScale(1) end
         p:Refresh()
     end)
-    p.rollReport = row("Roll calls in the report", "Change", function()
-        KKC.settings().rollcallsInReport = not KKC.settings().rollcallsInReport
-        p:Refresh()
-    end)
-    p.test = row("A test battle", "Show test battle", function() SlashCmdList.KORKRONCOMPANION("test") end)
-    dim(p.test.text, "A made-up battle at Tarren Mill, to see the note and the battle card without a fight.")
-    p.debug = row("Diagnostics", "Print to chat", function() SlashCmdList.KORKRONCOMPANION("debug") end)
-    dim(p.debug.text, "What this game client allows the addon (meter, names, sync). Send it along if something looks wrong.")
 
-    -- Book: heading and a short introduction on the left page, the settings on the right (taller rows: the page is
-    -- narrower, so their explanations take more lines). Docked: six rows of 58 still fit the Legacy window.
+    -- On the left page: a test battle and the diagnostics, with what they are for.
+    p.extras = Theme.LightText(p, 12)
+    dim(p.extras, "A made-up battle at Tarren Mill shows the note and the battle card without a fight. Diagnostics "
+        .. "prints what this game client allows the addon (meter, names, sync, Overlord); send it along if something "
+        .. "looks wrong.")
+    p.test = Theme.HallButton(p, "Show test battle", 150, 26, "Interface\\Icons\\INV_Sword_04",
+        "A made-up battle at Tarren Mill.", function() SlashCmdList.KORKRONCOMPANION("test") end)
+    p.debug = Theme.HallButton(p, "Diagnostics", 150, 26, "Interface\\Icons\\INV_Misc_Spyglass_02",
+        "Prints the diagnostics to chat.", function() SlashCmdList.KORKRONCOMPANION("debug") end)
+
+    -- Book: heading, introduction and the two extras on the left page, the settings on the right.
     function p:Layout(book, side)
         layoutHeading(self, book, side, self.intro, -2)
         self.intro:SetShown(book)
-        local top, height, step = book and 4 or 44, book and 72 or 58, book and 78 or 64
-        for i, box in ipairs(self.rowList) do
+        self.extras:SetShown(book)
+        self.top, self.minHeight = book and 4 or 44, book and 66 or 58
+        self:Stack()
+        if book then
+            at(self.test, "BOTTOMLEFT", side, "BOTTOMLEFT", 0, 0)
+            at(self.debug, "LEFT", self.test, "RIGHT", 8, 0)
+            for _, b in ipairs({ self.test, self.debug }) do b:SetSize(211, 32) end
+            at(self.extras, "BOTTOMLEFT", self.test, "TOPLEFT", 0, 12)
+            self.extras:SetWidth(PAGE_W)
+        else
+            for _, b in ipairs({ self.test, self.debug }) do b:SetSize(150, 26) end
+            at(self.test, "BOTTOMLEFT", self, "BOTTOMLEFT", 0, 0)
+            at(self.debug, "LEFT", self.test, "RIGHT", 8, 0)
+        end
+    end
+
+    -- Each row as tall as its explanation needs (at least minHeight), one under the other.
+    function p:Stack()
+        local y = self.top or 4
+        for _, box in ipairs(self.rowList) do
+            local h = KKC.try(box.text.GetStringHeight, box.text)
+            local height = math.max(self.minHeight or 66, (type(h) == "number" and h or 30) + 38)
             box:ClearAllPoints()
-            box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -top - (i - 1) * step)
+            box:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
             box:SetPoint("RIGHT", self, "RIGHT", 0, 0)
             box:SetHeight(height)
+            y = y + height + 6
         end
+    end
+
+    local function onOff(box, on, onText, offText, onLabel, offLabel)
+        box.text:SetText(Theme.DIM .. (on and onText or offText) .. "|r")
+        box.button:SetLabel(on and (onLabel or "On") or (offLabel or "Off"))
+        box.button:SetSelected(on and true or false)
     end
 
     function p:Refresh()
         local set = KKC.settings()
         self.notify.text:SetText(Theme.DIM .. NOTIFY[set.notify] .. "|r")
         self.notify.button:SetLabel(set.notify:sub(1, 1):upper() .. set.notify:sub(2))
-        self.all.text:SetText(Theme.DIM .. (set.promptAll and "Everyone who fought is told about a battle."
-            or "Only the guildie first into battle is told (they write the report).") .. "|r")
-        self.all.button:SetLabel(set.promptAll and "Everyone" or "First into battle")
-        self.sync.text:SetText(Theme.DIM .. (set.sync
-            and "On: notable battles are shared with guildies who run the addon, a few hidden guild messages each."
-            or "Off: nothing is sent or read. Battles stay in your own chronicle.") .. "|r")
-        self.sync.button:SetLabel(set.sync and "On" or "Off")
-        self.sync.button:SetSelected(set.sync)
-        self.rollReport.text:SetText(Theme.DIM .. (set.rollcallsInReport
-            and "On: the report text ranks the Kor'kron by roll calls (Name 100%) and lists each roll call. Longer to paste."
-            or "Off: the report text lists the Kor'kron by name. Roll calls stay on the battle card.") .. "|r")
-        self.rollReport.button:SetLabel(set.rollcallsInReport and "On" or "Off")
-        self.rollReport.button:SetSelected(set.rollcallsInReport)
+        onOff(self.all, set.promptAll, "Everyone who fought is told about a battle.",
+            "In a raid, its leader is told (they write the report). Outside a raid, whoever fought.", "Everyone",
+            "Raid leaders")
+        onOff(self.sync, set.sync,
+            "On: notable battles are shared with guildies who have the addon, in hidden messages, never in guild chat.",
+            "Off: nothing is sent or read. From the field stays empty.")
+        onOff(self.rollReport, set.rollcallsInReport,
+            "On: the report ranks the Kor'kron by roll calls (Name 100%) and lists them. Longer to paste.",
+            "Off: the report lists the Kor'kron by name. Roll calls stay on the battle card.")
+        local overlordOn = set.overlord ~= false
+        local installed = type(Overlord) == "table"
+        onOff(self.overlord, overlordOn,
+            (installed and "On" or "On, but Overlord isn't installed") .. ": Nemesis marks and the standing of the guilds.",
+            "Off: Overlord is left alone, even when installed.")
+        onOff(self.minimap, not set.minimap.hide,
+            "Shown: left click the hall, right click the latest report.",
+            "Hidden: open the hall with /kkc.", "Shown", "Hidden")
+        local scale = set.hallScale or 1
+        self.size.text:SetText(Theme.DIM .. ("The hall at %d%%. Drag the grip in its bottom right corner to resize."):format(
+            math.floor(scale * 100 + 0.5)) .. "|r")
+        self.size.button:SetEnabled(math.abs(scale - 1) > 0.005)
+        self:Stack()
     end
     return p
 end
@@ -736,8 +1061,58 @@ local function placeAlone(f)
     f:SetParent(UIParent)
     f:ClearAllPoints()
     f:SetSize(WIDTH, HEIGHT)
+    f:SetScale(KKC.settings().hallScale or 1)
     f:SetPoint("CENTER", 0, 10)
     f:SetFrameStrata("HIGH")
+end
+
+-- Resizing: a grip in the bottom right corner scales the whole book, since its two pages are laid out for these
+-- proportions. Dragged with the top left corner held in place; the size is kept (settings.hallScale). Right click:
+-- back to the usual size.
+local MIN_SCALE, MAX_SCALE = 0.6, 1.5
+local function resizeGrip(f)
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetSize(18, 18)
+    grip:SetPoint("BOTTOMRIGHT", -8, 8)
+    grip:SetFrameLevel(f:GetFrameLevel() + 30)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:RegisterForClicks("RightButtonUp")
+    grip:SetScript("OnClick", function()
+        KKC.settings().hallScale = nil
+        placeAlone(f)
+    end)
+    grip:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" then return end
+        local s = f:GetScale()
+        local left, top = f:GetLeft(), f:GetTop()
+        if not (left and top) then return end
+        left, top = left * s, top * s -- in UIParent's units
+        grip:SetScript("OnUpdate", function()
+            local x, y = GetCursorPosition()
+            local u = UIParent:GetEffectiveScale()
+            x, y = x / u, y / u
+            local scale = math.max((x - left) / WIDTH, (top - y) / HEIGHT)
+            scale = math.max(MIN_SCALE, math.min(MAX_SCALE, scale))
+            f:SetScale(scale)
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left / scale, top / scale)
+        end)
+    end)
+    grip:SetScript("OnMouseUp", function(_, button)
+        if button ~= "LeftButton" then return end
+        grip:SetScript("OnUpdate", nil)
+        KKC.settings().hallScale = f:GetScale()
+    end)
+    grip:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Drag to resize the hall", 1, 0.82, 0)
+        GameTooltip:AddLine("Right click: the usual size.", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    grip:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    return grip
 end
 
 local function build()
@@ -749,6 +1124,7 @@ local function build()
     f:SetScript("OnDragStart", function(self) if not self.docked then self:StartMoving() end end)
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     placeAlone(f)
+    f.grip = resizeGrip(f)
     tinsert(UISpecialFrames, "KorKronCompanionHall") -- Esc closes it
     f:Hide()
 
@@ -825,7 +1201,6 @@ local function build()
     f.pages = {}
     for key, builder in pairs(BUILDERS) do f.pages[key] = builder(f.content) end
 
-    f:SetScript("OnHide", function() if tab then tab.selected:Hide() end end)
     return f
 end
 
@@ -855,20 +1230,22 @@ local function setLook(book)
         f.sub:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
         f.sub:SetWidth(PAGE_W)
         f.sub:SetJustifyH("CENTER")
-        f.rules[1]:SetPoint("TOP", f, "TOPLEFT", mid, -96)
+        -- The battle cry under who you are, above the rule (at the page's bottom it ran into the section's text,
+        -- at its top into the book's edge).
+        f.motto:SetPoint("TOP", f.sub, "BOTTOM", 0, -5)
+        f.motto:SetWidth(PAGE_W)
+        f.rules[1]:SetPoint("TOP", f, "TOPLEFT", mid, -106)
         -- The contents in one column, like a book's table of contents.
         -- Big entries, close together, filling the space between the two rules.
         for i, b in ipairs(f.nav) do
             b:ClearAllPoints()
             b:SetSize(PAGE_W - 40, 42)
-            b:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L + 16, -106 - (i - 1) * 45) -- room for the diamond in front
+            b:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L + 16, -116 - (i - 1) * 45) -- room for the diamond in front
             navSize(b, 34, 16)
         end
-        f.rules[2]:SetPoint("TOP", f, "TOPLEFT", mid, -336)
-        f.side:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L, -350)
-        f.side:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", PAGE_L + PAGE_W, 66)
-        f.motto:SetPoint("BOTTOM", f, "BOTTOMLEFT", mid, 40)
-        f.motto:SetWidth(PAGE_W)
+        f.rules[2]:SetPoint("TOP", f, "TOPLEFT", mid, -346)
+        f.side:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_L, -360)
+        f.side:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", PAGE_L + PAGE_W, 44)
         f.content:SetPoint("TOPLEFT", f, "TOPLEFT", PAGE_R, -48)
         f.content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -44, 44)
         if f.chrome.banner then f.chrome.banner:Hide() end
@@ -945,127 +1322,3 @@ end
 
 KKC.Listen("EngagementClosed", Hub.Refresh)
 KKC.Listen("FeedUpdated", Hub.Refresh)
-
--- ------------------------------------------------------------------------------------------------
--- Docked in the Legacy window, behind our own side tab
--- ------------------------------------------------------------------------------------------------
-
-local function setChrome(shown)
-    local c = hall.chrome
-    if c.border then c.border:SetShown(shown) end
-    if c.banner then c.banner:SetShown(shown) end
-    hall.close:SetShown(shown)
-    hall.crest:SetShown(shown) -- the Legacy window has its own portrait there
-end
-
-function Hub.Dock()
-    local L = LegacySystemFrame
-    if not L then return Hub.Show() end
-    hall = hall or build()
-    hall.docked = true
-    hall:SetParent(L)
-    hall:ClearAllPoints()
-    hall:SetPoint("TOPLEFT", L, "TOPLEFT", 2, -22)
-    hall:SetPoint("BOTTOMRIGHT", L, "BOTTOMRIGHT", -2, 2)
-    -- Above everything on Legacy's pages (the pages sit at level 100, their cards and bars a little higher), but
-    -- below the window's portrait (level 400). The deepest level actually used is measured, since whichever page was
-    -- open last stays shown underneath. Only reading levels, never changing Blizzard's frames.
-    local top = math.max(L:GetFrameLevel(), 100)
-    local function deepest(frame, depth)
-        if depth > 8 then return end
-        top = math.max(top, frame:GetFrameLevel())
-        for _, child in ipairs({ frame:GetChildren() }) do deepest(child, depth + 1) end
-    end
-    for _, page in ipairs(type(L.Pages) == "table" and L.Pages or {}) do pcall(deepest, page, 0) end
-    local container = type(L.PortraitContainer) == "table" and L.PortraitContainer
-    local portrait = container and container:GetFrameLevel() or 400
-    if top + 40 < portrait then
-        hall:SetFrameStrata(L:GetFrameStrata())
-        hall:SetFrameLevel(top + 10)
-    else
-        hall:SetFrameStrata("HIGH") -- no room under the portrait: a layer above the whole window instead
-    end
-    setChrome(false)
-    setLook(false)
-    hall:Show()
-    if tab then tab.selected:Show() end
-    Hub.Refresh()
-end
-
-function Hub.Undock()
-    if not (hall and hall.docked) then return end
-    hall.docked = false
-    hall:Hide()
-    setChrome(true)
-    placeAlone(hall)
-end
-
-local function makeTab(L)
-    local last = L.Tabs and L.Tabs[#L.Tabs]
-    if not last then return end
-    local t = CreateFrame("Button", nil, L)
-    local bg = t:CreateTexture(nil, "BACKGROUND")
-    bg:SetPoint("CENTER")
-    if Theme.Atlas(bg, "common-sidetab", true) then
-        t:SetSize(bg:GetWidth(), bg:GetHeight())
-    else
-        t:SetSize(43, 55)
-        bg:SetAllPoints()
-        bg:SetColorTexture(0.1, 0.05, 0.03, 0.9)
-    end
-    local icon = t:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(30, 30)
-    icon:SetPoint("CENTER", -2, 0)
-    icon:SetTexture(Theme.F().icon)
-    if t.CreateMaskTexture then
-        local mask = t:CreateMaskTexture()
-        if mask and Theme.Atlas(mask, "common-sidetab-mask", true) then
-            mask:SetPoint("CENTER")
-            icon:AddMaskTexture(mask)
-        end
-    end
-    t.selected = t:CreateTexture(nil, "OVERLAY")
-    t.selected:SetPoint("CENTER")
-    if not Theme.Atlas(t.selected, "common-sidetab-selected", true) then
-        t.selected:SetAllPoints()
-        t.selected:SetColorTexture(1, 0.8, 0.3, 0.25)
-    end
-    t.selected:Hide()
-    local hover = t:CreateTexture(nil, "HIGHLIGHT")
-    hover:SetPoint("CENTER")
-    if not Theme.Atlas(hover, "common-sidetab-hover", true) then
-        hover:SetAllPoints()
-        hover:SetColorTexture(1, 1, 1, 0.15)
-    end
-    t:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -2)
-    t:SetScript("OnClick", function()
-        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
-        Hub.Dock()
-    end)
-    t:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Hall of the Kor'kron", 1, 0.82, 0)
-        GameTooltip:AddLine("Your battles, the war chronicle and the War Ledger.", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    t:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- Blizzard's own tabs and closing the window take the hall away again. HookScript only listens.
-    for _, other in ipairs(L.Tabs) do
-        other:HookScript("OnMouseUp", function(_, button) if button == "LeftButton" then Hub.Undock() end end)
-    end
-    L:HookScript("OnHide", Hub.Undock)
-    return t
-end
-
-local function attach()
-    if tab or not LegacySystemFrame then return end
-    tab = makeTab(LegacySystemFrame)
-end
-
--- The Legacy window loads on demand.
-KKC.On("ADDON_LOADED", function(name) if name == "Blizzard_LegacySystem" then attach() end end)
-KKC.Listen("Init", function()
-    local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and KKC.try(C_AddOns.IsAddOnLoaded, "Blizzard_LegacySystem")
-    if loaded then attach() end
-end)

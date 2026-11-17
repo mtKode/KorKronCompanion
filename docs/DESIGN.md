@@ -42,7 +42,7 @@ who fought (meter, sightings, sync) and damage/healing totals (meter). The battl
 - **Notable**: an engagement worth bothering you about. It needs at least one of: a kill, a guildie death, 2+ enemy
   players, or 20+ s of PvP combat. One stray hit from a passing rogue is logged as *minor* and never notifies.
 - **First into battle**: the guildie whose engagement started first (ties: alphabetical). They're named in the
-  reports and are the only one prompted by default. This is *not* the guild's event initiator, who gathered the group
+  reports. This is *not* the guild's event initiator, who gathered the group
   in Discord; the addon can't know that, and the report is posted by hand anyway. (In code: `KKC.Initiator`.)
   Your client only knows when *you* entered combat, so it names someone only when it can compare: guildies' synced
   reports of the fight, or nobody else of ours in it (`KKC.KnownInitiator`). Otherwise the card shows just the
@@ -125,7 +125,10 @@ Tracking always runs in the background; this only decides whether you're told. R
 Setting `notify`: `off` | `quiet` (one chat line, the default) | `toast` (a note on screen) | `prompt` (open the card).
 - No popups by default. The 0.1 default `toast` is turned into `quiet` once (schema 2).
 - Never anything during combat.
-- Only notable engagements, and only for the guildie first into battle (`promptAll` for everyone).
+- Only notable engagements, and by default only for whoever writes the report: in a raid its leader, outside a raid
+  (alone or a party of up to five) whoever fought (`UI.Told`; `promptAll` for everyone). First into battle was the
+  rule, but with patient guild sync the other reports come minutes later, so at the moment of the notice everyone
+  thought they were first.
 - Minor engagements are kept in the log and never announced.
 
 ## Outputs
@@ -206,11 +209,11 @@ faction banner and emblem, inset boxes, icon buttons. Sections on the left:
 
 | Section | Contents |
 |---|---|
-| **Chronicle** | Your battles over Today / This week / Last week / This month / Last month / All time: four tiles (battles, foes slain, Kor'kron fallen, first blow ours/theirs), the details (contested ground, fought beside, most slain, by race and class, greatest battle, deadliest blades, most mending), the battles themselves. Scribe chronicle (copy) and Sound the horn (one line to guild chat). |
-| **Battles** | Every battle you fought, newest first, 19 a page; skirmishes on request. Click one for its battle card. |
+| **Chronicle** | Your battles over Today / This week / Last week / This month / Last month / All time: four tiles (battles, foes slain, Kor'kron fallen, first blow ours/theirs), the standing of the guilds from Overlord on top, then the details as sections (`Summary.Sections`): a yellow heading over two columns, name and number (contested ground, fought beside, most slain, by race and class, greatest battle, deadliest blades, most mending). Deadliest blades and most mending are a rate: damage or healing a minute of the battles each guildie was in, ranked only with at least 3 of the period's battles (fewer when the period has fewer), guildies outside our group left out. Totals mostly measured who came most often. Scribe chronicle (copy) and Sound the horn (one line to guild chat). |
+| **Battles** | Every battle you fought, newest first, 19 a page; skirmishes on request. Click one for its battle card.  A campaign folds its fights away with its +/-, a day with a click on its heading (until /reload). |
 | **From the field** | The same chronicle over the guild feed (guildies' battles you weren't in). Copy only, never shared. Says so when guild sync is off. |
-| **War Ledger** | Tiered challenges, Legacy style: total slain, unique foes, battles fought, first blows, ambushes weathered, each enemy race, each class. A row shows the next tier with a progress bar. |
-| **Settings** | Announcing battles, who is told, guild sync, a test battle, diagnostics. |
+| **War Ledger** | Tiered challenges, Legacy style: total slain, unique foes, battles fought, first blows, ambushes weathered, kills in how many zones, each land (Stranglethorn Vale, Hillsbrad, Alterac, Arathi, Ashenvale, the Barrens, the Plaguelands, around Blackrock Mountain, Tanaris and Silithus), each enemy race, each class. A row shows the next tier with a progress bar. Kills by zone are kept from 0.4 on, filled once from the battles still in the log.  On the left page, your standing (`Ledger.Standing`): deeds done (tiers of all) and the three challenges closest to their next tier. |
+| **Settings** | Announcing battles, who is told, guild sync, roll calls in the report, Overlord (on unless switched off: `settings.overlord == false`), the minimap button, the size of the hall. On the left page: a test battle and diagnostics. |
 
 Weeks and days follow the server's reset (`C_DateAndTime.GetWeeklyResetStartTime`, Wednesday on EU); months are
 calendar months (local time).
@@ -227,12 +230,23 @@ The pages use our own aged-paper texture (`Media/Page.tga`, made by `tools/make_
 and the period choices are links (the chosen one gold with a diamond),
 ribbon bookmarks hang out of the bottom of the book (one per section, the open one lower), brass caps sit on the
 cover's corners, and Battles reads like a diary: a heading per day, then times and battles, campaigns as paper cards
-pinned to the page. A minimap button (`Minimap.lua`) opens it.
+pinned to the page. A minimap button (`Minimap.lua`) opens it. A grip in the bottom right corner scales the whole book (0.6 to 1.5, kept in `settings.hallScale`;
+right click resets), since its two pages are laid out for fixed proportions.
 
-**In the Legacy window:** our own side tab under Blizzard's three (the `common-sidetab` art, faction banner icon).
-Clicking it lays the same hall over the Legacy content, without its own border, banner and crest. Blizzard's tabs and
-closing the window take it away again. Blizzard's frames are only hooked (`HookScript`), never changed, so this can't
-taint them. The Legacy window loads on demand, so the tab is attached on `ADDON_LOADED` of `Blizzard_LegacySystem`.
+**In the Legacy window:** the War Ledger is one more category, "Kor'kron War Ledger", at the end of the Legacy
+challenge categories (`LegacyLedger.lua`). Choosing it shows our own cards where Blizzard's challenges are: a card of
+fun numbers (`Ledger.Highlights`: slain, battles, slain per fall, most slain foe, favourite prey, most fought over,
+biggest and longest battle, first blows, ambushes turned), then the tiered challenges (`Ledger.Tracks`), drawn with the
+Legacy window's own card, ribbon, icon frame and progress bar art. (An earlier side tab laid the whole hall over the
+window; it looked like an old design and was removed.) The hall's own War Ledger section draws the same cards
+(`LegacyLedger.Cards`) in one scrolling column, the fun numbers in one column on its narrower page.
+How it fits in (Blizzard's code read from the `forever` branch of Gethe/wow-ui-source): the category list is rebuilt
+from achievement categories in `ChallengesPage:UpdateCategoryList()`, and our entry is added after each rebuild. It has
+no achievements, so Blizzard's selection never fires for it and its string id matches nothing of theirs.
+`CategoryList:SelectCategory()` is hooked: ours hides the challenge pane (`DetailPane`) and shows ours, any of theirs
+swaps back, as do Blizzard selecting a category and the page closing. Only `hooksecurefunc`, `HookScript` and an
+`EventRegistry` callback, plus hiding and showing the challenge pane; no Blizzard function is replaced. While
+searching, our category isn't added. If the window's names change in a patch, nothing is added.
 
 **Factions:** the Horde gets red and iron (Horde war table, Horde emblem and banner, "Lok'tar ogar!"); the Alliance
 gets blue and gold (Alliance war table, emblem and banner, "For the Alliance!"). The battle card and the scribe
@@ -353,12 +367,26 @@ Size: roughly 1 KB per engagement, so a busy year comes to a few MB. That's fine
 Gaps a long-term report can't fill: fights where nobody had the addon, killing blows (no combat log), and enemies
 known only by name when nobody targeted them.
 
+## Overlord, read lightly
+When the Overlord addon is installed, `OverlordLink.lua` reads two things it already shows, and nothing more:
+- **Nemesis**: when a battle closes, foes on Overlord's Nemesis list (its five most wanted enemies of the week,
+  `Overlord.MostWanted:IsWanted`) are marked `en.nemesis`. Marked then, because the list changes weekly. The report
+  gets an "Overlord Nemesis:" line and the battle card's foe heading a skull and the names.
+- **Guild rating**: the top of the Chronicle's right page, "Standing of the guilds", is a podium of Overlord's top
+  three guilds (the first in the middle and higher, faction emblems, points; ours named below if further down), from
+  its leaderboard's display cache (`Overlord.Leaderboard._displayCache.sortedGuildRating`). Missing until Overlord has
+  built its leaderboard after login. When it can't be shown, the same place says why in one quiet line in the hall's
+  voice (`O.RatingStatus`, `O.QuietLine`): no Overlord ("No herald of Overlord rides with you..."), its leaderboard
+  still loading ("...still counting the dead..."), or an Overlord we can't read any more ("...a hand we can no longer
+  read..."). The Nemesis needs no such line: a battle without one simply has none.
+No dependency in the `.toc`: the global is read only when needed, every call guarded; missing or changed means nothing
+is shown. These are Overlord's internals, not a published API, so an update may switch this off. Nothing is sent,
+saved in Overlord or copied from it (its license is All Rights Reserved).
+
 ## Commands
 See the README. `/kkc` opens the hall; `/kkc debug` gives the API and restriction report.
 
 ## Later
-1. **A real Legacy category**: Blizzard's Legacy list is built from achievement categories and every row expects a real
-   achievement; inserting ours into it would risk tainting. The side tab avoids that. Revisit only if it's wanted.
-2. Call to arms button, nemesis / kill-on-sight list.
-3. Killer from death recap (`C_DeathRecap`) for "who killed me".
-4. Optional companion Discord bot that reads shared lines from the bridge channel.
+1. Call to arms button, nemesis / kill-on-sight list.
+2. Killer from death recap (`C_DeathRecap`) for "who killed me".
+3. Optional companion Discord bot that reads shared lines from the bridge channel.

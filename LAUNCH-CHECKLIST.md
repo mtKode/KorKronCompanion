@@ -63,14 +63,40 @@ Run `/kkc debug` first and keep its output.
 - [ ] `/kkc` opens the hall: dark parchment texture, war-table border in your faction's style, banner title, crest,
       guild name and your name at the top. The section buttons on the left switch pages.
 - [ ] Chronicle: the six period buttons fit on one row; the tiles, details and battles don't overlap. "This month"
-      says the month's name.
-- [ ] Battles: rows open the battle card; Newer / Older page through.
-- [ ] War Ledger: icons show (no green boxes; untouched tracks are grey), bars fill, "Tier 1 of 4".
-- [ ] Settings: each Change button cycles and the text follows. Notifications show "Quiet" (one chat line, no popup).
-- [ ] Legacy window: our tab (faction banner icon) sits under the three Blizzard tabs. Clicking it shows the hall
-      inside the window without its own border; check whether the Legacy portrait in the top-left corner and the
-      close button are covered. Clicking a Blizzard tab or closing the window takes the hall away again.
-      Nothing in the Legacy window behaves differently afterwards, and no "blocked" popup appears.
+      says the month's name. The dates line ends with the time of battle; "Kor'kron fallen" shows "(you n)".
+      Right page: "Standing of the guilds" on top as a podium (first in the middle, faction emblems, points; our
+      guild named below when lower), then the details as sections: a yellow heading (Most slain, Greatest battle...)
+      above two columns, names on the left and numbers on the right, a line between sections, scrolling when long.
+- [ ] Resizing the hall: the grip in the bottom right corner scales the whole book (0.6 to 1.5 times), the top left
+      corner stays put; the size is kept after closing and /reload. Right click on the grip: the usual size.
+- [ ] Battles: rows open the battle card; Newer / Older page through. A campaign row has a +/- at its left edge:
+      clicking it folds the outing's fights away (and back); clicking the row still opens the outing's card.
+      Clicking a day's heading folds the whole day: its diamond dims, "(n battles folded away)"; again to unfold.
+- [ ] War Ledger (hall): the same Legacy cards as in the Legacy window, the fun numbers card first (one column on the
+      narrower page). Icons show (no green boxes; untouched tracks are grey), bars fill, "Tier 1 of 4". The cards
+      scroll (wheel or the small bar on the right) and don't run past the page's bottom.
+- [ ] Settings: seven rows on the right (announcing, who is told, guild sync, roll calls in the report, Overlord,
+      minimap button, size of the hall), each as tall as its text; each button switches and the text follows.
+      Notifications show "Quiet". Who is told: "Raid leaders" (in a raid only its leader gets the notice; alone or
+      in a party, whoever fought) or "Everyone".
+      Overlord off: no Nemesis marks, the Chronicle says the heralds were sent away. Minimap: the button hides and
+      shows. Size: shows the percentage; "Usual size" resets a resized hall. Left page: Show test battle and
+      Diagnostics.
+- [ ] War Ledger left page, below the totals: deeds done (the bar shows "n / m" tiers) and the three challenges
+      closest to glory. Nothing overlaps or runs off the page. "Lok'tar ogar!" sits above the guild's name.
+- [ ] Chronicle: Deadliest blades and Most mending show "8.2k a minute  (12 battles)"; someone in only one or two of
+      the week's battles isn't ranked.
+- [ ] Legacy window (Y), Challenges: "Kor'kron War Ledger" is the last category in the list. Clicking it shows a
+      card of fun numbers, then the War Ledger's challenges on Legacy cards (icons, bars, "Tier 1 of 4"). Clicking a
+      Blizzard category brings its challenges back; reopening the window shows them too. Searching hides our
+      category. Nothing in the Legacy window behaves differently afterwards, and no "blocked" popup appears.
+- [ ] War Ledger geography: "Jungle Killer" and the other lands show, with kills from earlier battles already counted
+      (filled once from the log). The fun numbers card shows "Bloodiest ground".
+- [ ] With Overlord installed: the Chronicle's details end with "Overlord guild rating" (top three, and us if lower),
+      once Overlord's leaderboard has loaded. A battle with a Nemesis in it: "Overlord Nemesis:" in the report text
+      and a skull with the name in the card's foe heading. Right after login the Chronicle may say Overlord's heralds
+      are "still counting the dead" until its leaderboard loads. Without Overlord: one line, "No herald of Overlord
+      rides with you...", no Nemesis, no errors.
 - [ ] After a real battle: one line in chat, no popup; the battle is in the hall.
 
 ## 4b. War reports

@@ -18,7 +18,7 @@ checkout links it instead; it's not tracked in git.)
 ## Commands
 | Command | |
 |---|---|
-| `/kkc` | Open or close the Hall of the Kor'kron (also the minimap button, and a side tab in the Legacy window) |
+| `/kkc` | Open or close the Hall of the Kor'kron (also the minimap button). The War Ledger is also a category in the Legacy window's challenges |
 | `/kkc day` / `week` / `lastweek` / `month` / `lastmonth` | The hall's Chronicle for that period |
 | `/kkc battles` / `ledger` / `settings` | The hall on that section |
 | `/kkc guild [n]` | The hall's From the field section, or guild feed battle n's card |
@@ -26,7 +26,7 @@ checkout links it instead; it's not tracked in git.)
 | `/kkc campaign [n]` | Campaign card for outing n: every fight less than 30 min apart as one report |
 | `/kkc log [all]` / `ledger chat` | Recent battles / War Ledger totals in chat |
 | `/kkc notify off\|quiet\|toast\|prompt` | How you're told about a battle (default `quiet`: one chat line) |
-| `/kkc all on\|off` | Tell you even when you weren't first into battle |
+| `/kkc all on\|off` | Tell you of every battle, not only as raid leader (outside a raid you're always told) |
 | `/kkc sync on\|off` | Share battles with guildies (default off) |
 | `/kkc rollcall` | A roll call now on a sheet beside the raid panel, for a Print Screen (also shift click on the minimap button) |
 | `/kkc rollcall report on\|off` | Roll calls in the report text too (off by default; they're always on the battle card) |
@@ -47,7 +47,9 @@ checkout links it instead; it's not tracked in git.)
 | `Ledger.lua` | Per-character kill totals and the War Ledger challenge tracks |
 | `Summary.lua` | Chronicles over a period (day, week, calendar month, all time) |
 | `UI.lua` | Toast, battle card, copy box (and posting the report to guild / officer chat), notification rules |
-| `Hub.lua` | The Hall of the Kor'kron and its Legacy side tab |
+| `Hub.lua` | The Hall of the Kor'kron |
+| `OverlordLink.lua` | Reads the Overlord addon when installed: Nemesis marks on battles, top guilds in the Chronicle |
+| `LegacyLedger.lua` | The War Ledger as a category in the Legacy window's challenges |
 | `RollCall.lua` | Roll calls of the guild in your group every 10 minutes, attendance per outing, the roll call sheet |
 | `Minimap.lua` | The minimap button |
 | `Media/` | The addon's own textures (`tools/make_textures.py` makes them) |

@@ -328,6 +328,7 @@ function T.CloseEngagement()
     e.minor = not KKC.IsNotable(e)
     table.insert(KKC.db.log, 1, e)
     KKC.Prune(KKC.db.log, "log")
+    if KKC.Overlord then KKC.Overlord.MarkNemeses(e) end -- Overlord's Nemesis list changes weekly: marked now
     KKC.Ledger.Record(e)
     KKC.Fire("EngagementClosed", e)
 end

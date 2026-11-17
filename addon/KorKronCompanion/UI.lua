@@ -417,6 +417,9 @@ local function fillCard(e)
     -- The foes, tallied by race: how many, and how many times they fell.
     local tally = KKC.FoeTally(e)
     local foes = ("Foes of the %s (%d)"):format(UnitFactionGroup("player") or "Horde", s.enemies)
+    -- Overlord's Nemeses among them (marked when the battle closed).
+    local nemesis = KKC.Overlord and KKC.Overlord.NemesisText(e)
+    if nemesis then foes = foes .. "  " .. SKULL .. " Nemesis: " .. nemesis end
     if many then
         local parts = {}
         for _, t in ipairs(tally) do parts[#parts + 1] = t.count .. " " .. t.label end
@@ -709,13 +712,21 @@ end
 
 local waiting -- an engagement to announce once combat is over
 
+-- Who is told of a battle (unless everyone is, settings.promptAll): in a raid, its leader, who writes the report; outside
+-- a raid (alone or a party of up to five), whoever fought, since nobody else will. (Being first into battle was the
+-- rule, but with patient guild sync the other reports come minutes later, so everyone thought they were first.)
+function UI.Told(e)
+    if (e.groupSize or 0) <= 5 or not e.raidLeader then return true end
+    return e.raidLeader == KKC.me()
+end
+
 function UI.Notify(e, force)
     if not e or e.notified then return end
     if not e.test then e.minor = not KKC.IsNotable(e) end
     local set = KKC.settings()
     if not force then
         if e.minor or set.notify == "off" then return end
-        if KKC.Initiator(e) ~= KKC.me() and not set.promptAll then return end
+        if not set.promptAll and not UI.Told(e) then return end
     end
     if InCombatLockdown() then waiting = e; return end
     e.notified = true

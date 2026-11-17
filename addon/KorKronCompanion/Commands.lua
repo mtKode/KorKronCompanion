@@ -74,7 +74,19 @@ local function debug()
         KKC.say("  world position: " .. (w and ("yes (continent %d, %.0f, %.0f yards)"):format(w[1], w[2], w[3])
             or ("no" .. (type(x) == "number" and " (map position readable, world position not)" or " (map position hidden)"))))
     end
-    KKC.say("  in guild: " .. yesNo(IsInGuild()) .. ", addon prefix registered: " .. tostring(KKC.Sync.prefixRegistered))
+    -- Older clients return true; newer ones a result code: 0 success, 1 already registered (fine too), 2 invalid
+    -- prefix, 3 too many prefixes.
+    local reg, regText = KKC.Sync.prefixRegistered, nil
+    if reg == true or reg == 0 or reg == 1 then
+        regText = yesNo(true)
+    elseif reg == 2 then
+        regText = yesNo(false) .. " (invalid prefix)"
+    elseif reg == 3 then
+        regText = yesNo(false) .. " (too many prefixes)"
+    else
+        regText = yesNo(false) .. " (" .. tostring(reg) .. ")"
+    end
+    KKC.say("  in guild: " .. yesNo(IsInGuild()) .. ", addon prefix registered: " .. regText)
     local st = KKC.Sync.stats
     KKC.say(("  guild sync %s: %d sent, %d refused%s, %d given up, %d waiting to send, %d fights waiting their turn, %d left to raidmates"):format(KKC.settings().sync and "on" or "off", st.ok, st.refused,
         st.lastCode and (" (last code " .. tostring(st.lastCode) .. ")") or "", st.dropped, KKC.Sync.Pending(), KKC.Sync.Waiting(), st.quiet or 0))
@@ -161,7 +173,8 @@ end
 
 commands.all = function(arg)
     if arg == "on" then KKC.settings().promptAll = true elseif arg == "off" then KKC.settings().promptAll = false end
-    KKC.say("notify when not the initiator: " .. (KKC.settings().promptAll and "on" or "off"))
+    KKC.say("who is told of a battle: " .. (KKC.settings().promptAll and "everyone who fought"
+        or "raid leaders (outside a raid, whoever fought)") .. " (/kkc all on|off)")
 end
 
 commands.sync = function(arg)

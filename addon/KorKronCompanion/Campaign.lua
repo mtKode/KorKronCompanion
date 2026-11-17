@@ -94,6 +94,7 @@ function Campaign.View(c)
             local t = v.enemies[name] or { name = name, kills = 0 }
             v.enemies[name] = t
             t.class, t.race = t.class or en.class, t.race or en.race
+            t.nemesis = t.nemesis or en.nemesis
             t.kills = t.kills + (en.kills or 0)
         end
         for name, n in pairs(e.ownKills or {}) do v.ownKills[name] = (v.ownKills[name] or 0) + n end

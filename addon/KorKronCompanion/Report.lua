@@ -397,6 +397,8 @@ function Report.CopyText(e, description)
     if #alongside > 0 then lines[#lines + 1] = "Guildies seen outside our raid: " .. table.concat(alongside, ", ") end
     if (e.allies or 0) > 0 then lines[#lines + 1] = ("Other allies: %d"):format(e.allies) end
     lines[#lines + 1] = ("Enemies: %d %s%s"):format(s.enemies, KKC.enemyFaction(), #foes > 0 and (" (" .. table.concat(foes, ", ") .. ")") or "")
+    local nemesis = KKC.Overlord and KKC.Overlord.NemesisText(e)
+    if nemesis then lines[#lines + 1] = "Overlord Nemesis: " .. nemesis end
     return table.concat(lines, "\n")
 end
 
