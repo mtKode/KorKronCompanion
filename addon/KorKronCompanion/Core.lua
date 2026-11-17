@@ -211,7 +211,7 @@ KKC.defaults = {
         campaignGap = 1800,     -- fights closer than this (seconds) are one campaign: one report for the outing
         minimap = { hide = false, angle = 200 }, -- the minimap button (Minimap.lua): hidden?, where on the edge (degrees)
         rollcalls = true,       -- a roll call of the guild in your group every 10 minutes (RollCall.lua)
-        rollcallsInReport = false, -- the report text ranks the roster by roll calls and lists them (longer to paste)
+        rollcallsInReport = false, -- a campaign's report text adds who joined later and who left early
     },
     rollcalls = {}, -- who of the guild was in your group when, newest first (RollCall.lua)
     log = {},   -- your engagements, newest first

@@ -16,7 +16,7 @@ banner by your minimap.
 | Post the report in guild or officer chat | In the Scribe report window: **Guild chat** / **Officer chat** (click twice; it posts a line every 1.5 s) |
 | Post one line about a battle in guild chat | Off by default. Settings → **Sound the horn**, then Battle card → **Sound the horn** (in the Chronicle: a line about the whole period) |
 | A clean screenshot of the card | Battle card → **Capture likeness** hides the buttons for a few seconds; press Print Screen |
-| See who was present through a night | Battle card of a campaign → **Roll calls** |
+| See who came and went through a night | Battle card of a campaign: "joined 19:12" or "left 20:30" after a name; **Roll calls** for the night roll call by roll call |
 | See every raid of the guild at one battle | Battle card → **Multi-raid report** (shows only with guild sync, when other raids reported) |
 | Take a roll call now | `/kkc rollcall`, or shift click the minimap banner |
 | See battles guildies fought without you | Hall → **From the field** (needs guild sync) |
@@ -33,7 +33,7 @@ banner by your minimap.
   Without it, From the field and the Multi-raid report stay empty.
 - **Sound the horn**: off by default, so nothing lands in guild chat from a stray click. On, battle cards and the
   Chronicle get a button that posts a one-line account in guild chat.
-- **Roll calls in the report**, **Overlord**, **Minimap button**, **Size of the hall**: each explains itself there.
+- **Comings and goings in the report**, **Overlord**, **Minimap button**, **Size of the hall**: each explains itself there.
 
 ## How it works
 
@@ -90,7 +90,7 @@ the guilds is Overlord's own rating. Nothing is sent to it.
 | **First into battle** | The guildie whose fight started first. Named in the report, nothing more |
 | **First blow, ours / theirs** | Who struck first: we did, or they ambushed us |
 | **Kor'kron fallen** | Deaths on our side. "(you 25)" is how many of them were yours |
-| **Roll call** | A list of the guild in your group, taken every 10 minutes, for attendance |
+| **Roll call** | A list of the guild in your group (online, wherever they are), taken every 10 minutes. A campaign only notes from them who joined later or left early |
 | **Guildies seen outside our raid** | Guildies the meter saw fighting who weren't in your group: likely another raid's, so not counted as yours |
 | **From the field** | Guildies' battles that you weren't in (guild sync) |
 | **Multi-raid report** | Every raid of the guild at one battle, each from its own addon users (guild sync) |

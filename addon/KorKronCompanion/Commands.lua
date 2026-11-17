@@ -11,7 +11,7 @@
   /kkc all on|off      notify you even when you're not the initiator
   /kkc sync on|off     share battles with guildies over hidden guild messages (off by default)
   /kkc rollcall        a roll call of the guild in your group now, on a sheet beside the raid panel (for Print Screen)
-  /kkc rollcall report on|off   roll calls in the report text too (off: just on the battle card)
+  /kkc rollcall report on|off   who joined later / left early in the report text too (off: just on the battle card)
   /kkc minimap on|off  show or hide the minimap button (left click: the hall, right click: the latest report)
   /kkc ledger chat     your War Ledger totals in chat
   /kkc test            a made-up engagement to preview the toast, card and texts
@@ -142,11 +142,11 @@ end
 
 commands.hall = function() KKC.Hub.Toggle() end
 commands.rollcall = function(arg)
-    -- /kkc rollcall report on|off: roll calls in the report text; otherwise a roll call now.
+    -- /kkc rollcall report on|off: comings and goings in the report text; otherwise a roll call now.
     local what, value = (arg or ""):match("^(%S+)%s*(%S*)")
     if what == "report" then
         if value == "on" then KKC.settings().rollcallsInReport = true elseif value == "off" then KKC.settings().rollcallsInReport = false end
-        return KKC.say("roll calls in the report text: |cffffd100" .. (KKC.settings().rollcallsInReport and "on" or "off") .. "|r")
+        return KKC.say("comings and goings in the report text: |cffffd100" .. (KKC.settings().rollcallsInReport and "on" or "off") .. "|r")
     end
     KKC.RollCall.ShowSheet()
 end

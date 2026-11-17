@@ -181,21 +181,22 @@ posted to a channel asks *Again?* first (`posted` on the battle, or the outing's
 
 Officers asked for a raid-panel screenshot about every 50 minutes as proof of who was there. The addon takes the same
 record itself: a roll call of the guild in your party or raid every 10 minutes, and when a fight starts and ends
-(not closer than 2 minutes to the last one). A guildmate counts as present only when online and in your zone
-(`GetRaidRosterInfo` zone and online flags; in a party, the same map): the raid panel can't tell someone fighting in
-Hillsbrad from someone idling in Orgrimmar. Someone present at the previous roll call and missing now gets a second
-look 90 seconds later, so leaving the raid for a moment and rejoining doesn't count as absent.
+(not closer than 2 minutes to the last one). A guildmate in the group and online counts as present, wherever they
+are. (Until 0.5.1 they also had to be in your zone; a raid spread over a zone border or a long chase then showed
+people who fought all night at 36%. Older roll calls are read the new way.) Someone present at the previous roll call
+and missing now gets a second look 90 seconds later, so leaving the raid for a moment and rejoining doesn't count.
 
-An outing's roll calls (from 10 minutes before its first fight to 5 after its last) give each guildmate a share of
-roll calls present. Guildmates present at roll calls join the outing's warriors even if no fight came near them. The
-battle card sorts the warriors by attendance with the share in the first column. With the setting "Roll calls in the
-report" (off by default, `/kkc rollcall report on`) the report text lists them the same way
-(`Kor'kron (24): Gargrim 100%, Ozzy 80%, ...`) and adds `Roll calls: 22:08 (16), 22:16 (24, screenshot), ...`; off, the
-text keeps the plain name list so a big night still fits one Discord message (2,000 characters).
-Single fights show no attendance (their roll calls are just their start and end). Behind a **Roll calls** button on an outing's
-card (shown only when it has roll calls) is the night roll call by roll call: the time, how many were present and
-whether a screenshot was taken, then who joined, who was gone and who was away (and where) since the roll call before,
-and at the end who was at every roll call and the others with their share.
+An outing's roll calls (from 10 minutes before its first fight to 5 after its last) are not a tally: they only note
+who **joined later** (first seen at a roll call when the one before it was already taken during the outing) and who
+**left early** (gone at a roll call taken before the last fight ended). Missing one roll call in the middle of the
+night notes nothing. The times are those of the roll calls, so within 10 minutes. Guildmates present at roll calls
+join the outing's warriors even if no fight came near them. The battle card puts the note after the name
+(`Ozzy  joined 22:18`). With the setting "Comings and goings in the report" (off by default,
+`/kkc rollcall report on`) the report text adds `Joined later: Ozzy (22:18)` and `Left early: Zhara (23:05)`.
+Single fights show nothing of the roll calls (theirs are just their start and end). Behind a **Roll calls** button on an
+outing's card (shown only when it has roll calls) is the night roll call by roll call: the time, how many were with us
+and whether a screenshot was taken, then who joined, who was gone and who was offline since the roll call before,
+and at the end who joined later and who left early.
 
 Addons can't take screenshots on this client, so `/kkc rollcall` (or shift click on the minimap button) takes a roll
 call now, shows it on a sheet beside the raid panel (opened when the client allows) and waits for Print Screen; the

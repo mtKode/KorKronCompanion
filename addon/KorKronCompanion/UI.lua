@@ -296,7 +296,7 @@ local function buildCard()
     }
     f.hornButton = f.buttons[2] -- Sound the horn: only when switched on in Settings (settings.horn)
     -- Only on an outing with roll calls: the night roll call by roll call, in its own window.
-    f.rollButton = button("Roll calls", 130, "Each roll call of this outing: who was present, who joined, who left and who was away.",
+    f.rollButton = button("Roll calls", 130, "Each roll call of this outing: who was with us, who joined, who left and who was offline.",
         function() if f.engagement then KKC.RollCall.ShowTimeline(f.engagement) end end)
     table.insert(f.buttons, 4, f.rollButton)
     -- Only when other raids at the same battle reported (guild sync): the whole host, raid by raid.
@@ -376,15 +376,6 @@ local function fillCard(e)
     local att = e.attendance -- outings only (Campaign.View)
     local members = {}
     for _, m in ipairs(KKC.sortedValues(e.members)) do if not m.outside then members[#members + 1] = m end end
-    if att then
-        -- Who stayed longest first: the roll calls are the officers' proof of who was there.
-        table.sort(members, function(a, b)
-            local x, y = att.names[a.name], att.names[b.name]
-            local cx, cy = x and x.count or 0, y and y.count or 0
-            if cx ~= cy then return cx > cy end
-            return a.name < b.name
-        end)
-    end
     local many = s.members > ROWS
     local layouts = { card.wideRows, card.colRows, card.triRows }
     local use = s.members <= ROWS and 1 or (s.members <= 2 * ROWS and 2 or 3)
@@ -397,22 +388,17 @@ local function fillCard(e)
     local scrolls = #members > #rows
     card.membersHeader:SetText(("Warriors of the Kor'kron (%d)"):format(s.members)
         .. (s.alongside > 0 and (Theme.DIM .. ("   + %d outside our raid"):format(s.alongside) .. "|r") or "")
-        .. (att and (Theme.DIM .. ("   present at %d roll calls"):format(#att.calls) .. "|r") or "")
         .. (scrolls and (Theme.DIM .. ("   %d-%d, scroll for more"):format(offset + 1, offset + #rows - (#shown > #rows and 1 or 0)) .. "|r") or ""))
     setRows(rows, shown, function(m)
         local title = not many and KKC.rpTitle(m.name)
         local l = (title and (Theme.DIM .. title .. "|r ") or "") .. Theme.ClassLight(m.class) .. m.name .. "|r"
+        -- From the roll calls, only who came later or went early: "joined 19:12" after the name.
+        local note = att and use < 3 and KKC.RollCall.Note(att.names[m.name])
+        if note then l = l .. Theme.DIM .. "  " .. note .. "|r" end
         -- Our deaths aren't shown on the card (they stay in the data for the summaries); the skull is for foes slain.
         if use == 3 then return l end
         local dmg = (m.dmg or 0) > 0 and KKC.shortNumber(m.dmg) or ""
         local mend = (m.heal or 0) > 0 and (Theme.LIGHT_MEND .. KKC.shortNumber(m.heal) .. " mend|r") or ""
-        if att then
-            -- Presence first; then mend for healers, damage for the rest.
-            local a = att.names[m.name]
-            local share = a and ((a.share >= 0.75 and Theme.GOOD or Theme.DIM) .. KKC.RollCall.Share(a) .. "|r")
-                or (Theme.DIM .. "-|r")
-            return l, share, (m.heal or 0) > (m.dmg or 0) and mend or dmg
-        end
         return l, dmg, mend
     end)
 

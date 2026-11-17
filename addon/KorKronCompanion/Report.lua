@@ -372,26 +372,14 @@ function Report.CopyText(e, description)
         "Location: " .. location,
     }
     if e.campaign then lines[#lines + 1] = ("Clashes: %d"):format(e.fights) end
-    -- Outings only (Campaign.View): a single fight's roll calls are just its start and end. Off by default: the
-    -- roll calls are on the battle card (Roll calls button), and the text stays short enough for one Discord message.
+    lines[#lines + 1] = ("Kor'kron (%d): %s"):format(s.members, table.concat(members, ", "))
+    -- Outings only (Campaign.View): from the roll calls, who joined later and who left early. Off by default: it's on
+    -- the battle card, and the text stays short enough for one Discord message.
     local att = KKC.settings().rollcallsInReport and e.attendance
     if att then
-        -- Who stayed longest first, with how many of the roll calls they were present at.
-        local ranked, seen = {}, {}
-        for _, a in ipairs(KKC.RollCall.Ranked(att)) do
-            ranked[#ranked + 1] = a.name .. " " .. KKC.RollCall.Share(a)
-            seen[a.name] = true
-        end
-        for _, name in ipairs(members) do if not seen[name] then ranked[#ranked + 1] = name .. " (in a fight)" end end
-        members = ranked
-    end
-    lines[#lines + 1] = ("Kor'kron (%d): %s"):format(s.members, table.concat(members, ", "))
-    if att then
-        local calls = {}
-        for _, c in ipairs(att.calls) do
-            calls[#calls + 1] = ("%s (%d%s)"):format(date("%H:%M", c.t), KKC.count(c.present), c.shot and ", screenshot" or "")
-        end
-        lines[#lines + 1] = "Roll calls: " .. table.concat(calls, ", ")
+        local come = KKC.RollCall.Comings(att)
+        if #come.joined > 0 then lines[#lines + 1] = "Joined later: " .. KKC.RollCall.Times(come.joined, "joined") end
+        if #come.left > 0 then lines[#lines + 1] = "Left early: " .. KKC.RollCall.Times(come.left, "left") end
     end
     -- Not counted above: they may be in another raid's report (guild sync would have told).
     if #alongside > 0 then lines[#lines + 1] = "Guildies seen outside our raid: " .. table.concat(alongside, ", ") end

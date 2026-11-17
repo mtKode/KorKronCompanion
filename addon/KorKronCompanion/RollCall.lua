@@ -1,19 +1,23 @@
 --[[
   Roll calls: who of the guild is in your party or raid, taken every 10 minutes while you're in a group (and when a
   fight starts and ends). Officers asked for a raid-panel screenshot about every 50 minutes as proof of who was there;
-  this is the same record, taken more often and stricter: a guildmate only counts as present when online and in your
-  zone (the raid panel can't tell someone fighting in Hillsbrad from someone idling in Orgrimmar).
+  this is the same record, taken more often: a guildmate in the group and online is present, wherever they are (a
+  zone check marked people away who were fighting just over a border). Not a tally: an outing only notes who joined
+  later and who left early.
 
   Stored newest first in KKC.db.rollcalls:
-    { t, zone, raid, size, others, present = { [name] = class }, away = { [name] = "Orgrimmar" | "offline" }, shot }
+    { t, zone, raid, size, others, present = { [name] = class }, away = { [name] = "offline" }, shot }
+  (Roll calls before 0.5.1 also put guildmates in another zone under away, with the zone's name: read as present.)
   shot: a screenshot was taken while the roll call sheet was open. A guildmate missing who was present at the roll call
   before gets a second look 90 seconds later: leaving the raid for a moment and rejoining doesn't count as absent.
 
     RollCall.Take(manual)      record one now (manual: always, even right after the last one)
     RollCall.For(e)            the roll calls during an engagement or campaign view (oldest first)
-    RollCall.Attendance(e)     { calls, names = { [name] = { name, class, count, first, last, share } } } or nil
+    RollCall.Attendance(e)     { calls, names = { [name] = { name, class, first, last, joined, left } } } or nil
+    RollCall.Note(a)           "joined 22:18", "left 23:40", "22:18 - 23:40", or nil (there the whole outing)
+    RollCall.Comings(att)      { joined = { a... }, left = { a... } }, by time
     RollCall.ShowSheet()       a roll call now, on a sheet beside the raid panel, ready for Print Screen
-    RollCall.Timeline(e)       an outing's roll calls one by one: who joined, who left, who was away (text)
+    RollCall.Timeline(e)       an outing's roll calls one by one: who joined, who left, who was offline (text)
     RollCall.ShowTimeline(e)   that text in its own window (the Roll calls button on an outing's battle card)
 ]]
 
@@ -71,13 +75,13 @@ function RollCall.Snapshot()
         local unit = (raid and "raid" or "party") .. i
         local name = KKC.unitName(unit)
         if name and name ~= me then
-            local zone, online = placeOf(unit, raid and i or nil)
+            local _, online = placeOf(unit, raid and i or nil)
             local inGuild = KKC.try(UnitIsInMyGuild, unit)
             if KKC.readable(inGuild) and inGuild then
+                -- In the group and online is present, wherever they are: a raid spreads out over a border or a long
+                -- chase, and the zone said nothing about who was really with us.
                 if online == false then
                     call.away[name] = "offline"
-                elseif zone and here and zone ~= here then
-                    call.away[name] = zone
                 else
                     local _, class = KKC.try(UnitClass, unit)
                     call.present[name] = KKC.readable(class) and class or true
@@ -130,7 +134,7 @@ local function tick()
         -- One quiet chat line, so a raid-panel screenshot taken now lines up with the record.
         if call and call.raid and KKC.settings().notify ~= "off" then
             KKC.say(("roll call %s: %d of the guild present%s."):format(date("%H:%M", call.t), KKC.count(call.present),
-                KKC.count(call.away) > 0 and (", " .. KKC.count(call.away) .. " away") or ""))
+                KKC.count(call.away) > 0 and (", " .. KKC.count(call.away) .. " offline") or ""))
         end
     end
     C_Timer.After(60, tick)
@@ -158,33 +162,75 @@ function RollCall.For(e)
     return out
 end
 
--- Who was present at how many of the roll calls. share: 0-1.
+-- Who was with us at a roll call: in the group and online. Older roll calls (before 0.5.1) counted a guildmate in
+-- another zone as away; here they count as with us too, so past nights read the same way.
+local function withUs(call)
+    local set = {}
+    for name, class in pairs(call.present) do set[name] = class end
+    for name, where in pairs(call.away or {}) do
+        if where ~= "offline" and not set[name] then set[name] = true end
+    end
+    return set
+end
+RollCall.WithUs = withUs
+
+-- Who came and went during an outing. Not a tally of roll calls: someone missing at one roll call in the middle of
+-- the night was most likely just out of the raid for a moment. Only two things are noted:
+--   joined: first seen after the outing had begun (the roll call before them was taken once the fighting started)
+--   left:   gone before it ended (the roll call after them was taken before the last fight was over)
+-- Both are times of a roll call, so about right (to within 10 minutes), not exact.
+-- { calls, names = { [name] = { name, class, first, last, joined, left } } } or nil.
 function RollCall.Attendance(e)
     if e.feed then return nil end -- a guildie's fight: their roll calls aren't ours
     local calls = RollCall.For(e)
     if #calls == 0 then return nil end
-    local names = {}
-    for _, c in ipairs(calls) do
-        for name, class in pairs(c.present) do
-            local a = names[name] or { name = name, count = 0, first = c.t }
+    local names, sets = {}, {}
+    for i, c in ipairs(calls) do
+        sets[i] = withUs(c)
+        for name, class in pairs(sets[i]) do
+            local a = names[name] or { name = name, firstAt = i }
             names[name] = a
-            a.count, a.last = a.count + 1, c.t
+            a.lastAt = i
             if type(class) == "string" then a.class = class end
         end
     end
-    for _, a in pairs(names) do a.share = a.count / #calls end
+    local start, stop = e.start, e.stop or e.start
+    for _, a in pairs(names) do
+        a.first, a.last = calls[a.firstAt].t, calls[a.lastAt].t
+        local before, after = calls[a.firstAt - 1], calls[a.lastAt + 1]
+        if before and before.t >= start then a.joined = a.first end
+        if after and after.t <= stop then a.left = after.t end
+        a.firstAt, a.lastAt = nil, nil
+    end
     return { calls = calls, names = names }
 end
 
--- "100%", "67%"
-function RollCall.Share(a) return ("%d%%"):format(math.floor(a.share * 100 + 0.5)) end
+-- "joined 22:18", "left 23:40", "22:18 - 23:40", or nil for someone there the whole outing.
+function RollCall.Note(a)
+    if not a then return nil end
+    if a.joined and a.left then return date("%H:%M", a.joined) .. " - " .. date("%H:%M", a.left) end
+    if a.joined then return "joined " .. date("%H:%M", a.joined) end
+    if a.left then return "left " .. date("%H:%M", a.left) end
+    return nil
+end
 
--- Present guildmates by attendance: most roll calls first, then by name.
-function RollCall.Ranked(att)
-    return KKC.sortedValues(att.names, function(a, b)
-        if a.count ~= b.count then return a.count > b.count end
-        return a.name < b.name
-    end)
+-- Who joined later and who left early, by time: { joined = { a, ... }, left = { a, ... } }.
+function RollCall.Comings(att)
+    local joined, left = {}, {}
+    for _, a in pairs(att.names) do
+        if a.joined then joined[#joined + 1] = a end
+        if a.left then left[#left + 1] = a end
+    end
+    table.sort(joined, function(x, y) if x.joined ~= y.joined then return x.joined < y.joined end return x.name < y.name end)
+    table.sort(left, function(x, y) if x.left ~= y.left then return x.left < y.left end return x.name < y.name end)
+    return { joined = joined, left = left }
+end
+
+-- "Ozzy (22:18), Swollu (22:40)"
+function RollCall.Times(list, key)
+    local out = {}
+    for _, a in ipairs(list) do out[#out + 1] = a.name .. " (" .. date("%H:%M", a[key]) .. ")" end
+    return table.concat(out, ", ")
 end
 
 -- ------------------------------------------------------------------------------------------------
@@ -198,8 +244,8 @@ local function names(set)
     return table.concat(out, ", ")
 end
 
--- "22:16  24 present (screenshot)" then who joined, who left and who was away since the roll call before.
--- rich: colored for the window; plain otherwise.
+-- "22:16  24 with us (screenshot)" then who joined and who was gone since the roll call before, and who was offline.
+-- At the end: who joined later and who left early. rich: colored for the window; plain otherwise.
 function RollCall.Timeline(e, rich)
     local att = e.attendance or RollCall.Attendance(e)
     if not att then return nil end
@@ -207,33 +253,32 @@ function RollCall.Timeline(e, rich)
     local function c(color, text) return rich and (color .. text .. "|r") or text end
     local lines, before = {}, nil
     for _, call in ipairs(att.calls) do
-        local head = ("%s  %d present"):format(date("%H:%M", call.t), KKC.count(call.present))
+        local now = withUs(call)
+        local head = ("%s  %d with us"):format(date("%H:%M", call.t), KKC.count(now))
         if call.shot then head = head .. c(T.PLACE, "  (screenshot)") end
         lines[#lines + 1] = c("|cffffd100", head)
         if not before then
-            lines[#lines + 1] = "    " .. c(T.GOOD, "present: ") .. names(call.present)
+            lines[#lines + 1] = "    " .. c(T.GOOD, "with us: ") .. names(now)
         else
             local joined, left = {}, {}
-            for name in pairs(call.present) do if not before.present[name] then joined[name] = true end end
-            for name in pairs(before.present) do if not call.present[name] then left[name] = true end end
+            for name in pairs(now) do if not before[name] then joined[name] = true end end
+            for name in pairs(before) do if not now[name] then left[name] = true end end
             if next(joined) then lines[#lines + 1] = "    " .. c(T.GOOD, "joined: ") .. names(joined) end
             if next(left) then lines[#lines + 1] = "    " .. c(T.BAD, "gone: ") .. names(left) end
             if not (next(joined) or next(left)) then lines[#lines + 1] = "    " .. c(T.DIM, "no change") end
         end
-        local away = {}
-        for name, where in pairs(call.away) do away[#away + 1] = name .. " (" .. where .. ")" end
-        table.sort(away)
-        if #away > 0 then lines[#lines + 1] = "    " .. c(T.DIM, "away: " .. table.concat(away, ", ")) end
-        before = call
+        local offline = {}
+        for name, where in pairs(call.away or {}) do if where == "offline" then offline[name] = true end end
+        if next(offline) then lines[#lines + 1] = "    " .. c(T.DIM, "offline: " .. names(offline)) end
+        before = now
     end
-    -- Who was there the whole night, and the rest by share.
-    local all, part = {}, {}
-    for _, a in ipairs(RollCall.Ranked(att)) do
-        if a.count == #att.calls then all[#all + 1] = a.name else part[#part + 1] = a.name .. " " .. RollCall.Share(a) end
-    end
+    local come = RollCall.Comings(att)
     lines[#lines + 1] = ""
-    if #all > 0 then lines[#lines + 1] = c(T.GOOD, "At every roll call: ") .. table.concat(all, ", ") end
-    if #part > 0 then lines[#lines + 1] = c(T.DIM, "Part of the night: ") .. table.concat(part, ", ") end
+    if #come.joined == 0 and #come.left == 0 then
+        lines[#lines + 1] = c(T.GOOD, "Everyone was with us the whole outing.")
+    end
+    if #come.joined > 0 then lines[#lines + 1] = c(T.GOOD, "Joined later: ") .. RollCall.Times(come.joined, "joined") end
+    if #come.left > 0 then lines[#lines + 1] = c(T.DIM, "Left early: ") .. RollCall.Times(come.left, "left") end
     return table.concat(lines, "\n")
 end
 
@@ -360,9 +405,9 @@ local function fillSheet(call)
         end
     end
     local away = {}
-    for name, where in pairs(call.away) do away[#away + 1] = name .. " (" .. where .. ")" end
+    for name in pairs(call.away) do away[#away + 1] = name end
     table.sort(away)
-    sheet.away:SetText(#away > 0 and (Theme.DIM .. "Away: |r" .. table.concat(away, ", ")) or "")
+    sheet.away:SetText(#away > 0 and (Theme.DIM .. "Offline: |r" .. table.concat(away, ", ")) or "")
 end
 
 -- The game's own raid panel, when the client lets an addon open it (never in combat).

@@ -5,7 +5,7 @@
     Battles         every battle you fought, newest first; click one for its battle card
     From the field  guildies' battles you weren't in (the guild feed; needs guild sync)
     War Ledger      your deeds as tiered challenges, Legacy style
-    Settings        notifications, guild sync, roll calls in the report, a test battle, diagnostics
+    Settings        notifications, guild sync, comings and goings in the report, a test battle, diagnostics
 
   On its own (/kkc and the minimap button). The War Ledger also shows inside Forever's Legacy window, as one of its
   challenge categories (LegacyLedger.lua). The hall's "dark" layout (setLook(false), Layout(book = false)) was for
@@ -981,7 +981,7 @@ local function buildSettings(parent)
     end)
     p.all = row("Which battles you hear of", "Change", flip("promptAll"))
     p.sync = row("Guild sync", "Change", flip("sync"))
-    p.rollReport = row("Roll calls in the report", "Change", flip("rollcallsInReport"))
+    p.rollReport = row("Comings and goings in the report", "Change", flip("rollcallsInReport"))
     p.horn = row("Sound the horn", "Change", flip("horn"))
     p.overlord = row("Overlord", "Change", function()
         local set = KKC.settings()
@@ -1081,10 +1081,10 @@ local function buildSettings(parent)
             "Off: nothing is sent or read. Your battles stay your own and From the field stays empty. Turn it on when "
                 .. "your guildies use the addon too.")
         onOff(self.rollReport, set.rollcallsInReport,
-            "On: the report text ranks the Kor'kron by how many roll calls they were at (Name 100%) and lists each roll "
-                .. "call. Good for attendance, longer to paste.",
-            "Off: the report text lists the Kor'kron by name only. Roll calls are still taken every 10 minutes and "
-                .. "shown on the battle card.")
+            "On: the report of a campaign adds who joined later and who left early, with the time of the roll call "
+                .. "that noticed it (roll calls are taken every 10 minutes). One or two lines more to paste.",
+            "Off: the report lists the Kor'kron by name only. The battle card still notes who joined later or left "
+                .. "early, and its Roll calls button shows the night roll call by roll call.")
         onOff(self.horn, set.horn,
             "On: battle cards and the Chronicle get a Sound the horn button. One click posts a one-line account of the "
                 .. "battle in guild chat (and to Discord, if guild chat is linked there).",
