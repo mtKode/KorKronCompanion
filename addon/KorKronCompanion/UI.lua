@@ -295,17 +295,17 @@ local function buildCard()
         button("Close", 110, nil, function() f:Hide() end),
     }
     f.hornButton = f.buttons[2] -- Sound the horn: only when switched on in Settings (settings.horn)
-    -- Only on an outing with roll calls. Click: who joined later or left early, after their names (hidden until
-    -- asked for, each time a card opens). Right click: the night roll call by roll call, in its own window.
-    f.rollButton = button("Roll calls", 130, "Click: show or hide who joined later or left early, after their names. "
-        .. "Right click: every roll call of this outing, who joined, who left and who was offline.",
-        function(self, mouse)
+    -- Only on an outing with roll calls: shows or hides the roll calls on a side panel beside the card.
+    f.rollButton = button("Roll calls", 130, "Show or hide this outing's roll calls beside the card: who was with us at "
+        .. "each, who joined and who left, and who joined later or left early.",
+        function()
             if not f.engagement then return end
-            if mouse == "RightButton" then return KKC.RollCall.ShowTimeline(f.engagement) end
-            f.showComings = not f.showComings
-            UI.ShowCard(f.engagement, true)
+            if KKC.RollCall.SideShown() == f.engagement then KKC.RollCall.HideSide()
+            else KKC.RollCall.ShowSide(f.engagement, f) end
+            f.rollButton:SetSelected(KKC.RollCall.SideShown() == f.engagement)
         end)
-    f.rollButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    KKC.RollCall.OnSideHidden(function() f.rollButton:SetSelected(false) end)
+    f:SetScript("OnHide", function() KKC.RollCall.HideSide() end) -- the roll calls close with the card
     table.insert(f.buttons, 4, f.rollButton)
     -- Only when other raids at the same battle reported (guild sync): the whole host, raid by raid.
     f.hostButton = button("Multi-raid report", 140, "The multi-raid report: every raid of the guild at this battle, from their guildies' addons (guild sync). Your own report stays your raid's.",
@@ -376,13 +376,17 @@ local function fillCard(e)
     end
     card.buttons[2]:SetEnabled(not e.feed and not e.test) -- share only your own, real fights
     card.hasRollCalls = e.attendance ~= nil
-    card.rollButton:SetSelected(card.showComings and card.hasRollCalls or false)
+    -- The roll calls beside the card follow it to another outing, and close for a battle without them.
+    local open = KKC.RollCall.SideShown()
+    if open and open ~= e then
+        if card.hasRollCalls then KKC.RollCall.ShowSide(e, card) else KKC.RollCall.HideSide() end
+    end
+    card.rollButton:SetSelected(card.hasRollCalls and KKC.RollCall.SideShown() == e or false)
     card.hasHost = KKC.Host(e) ~= nil
     if not card.capturing then card.layoutButtons() end
 
     -- As many warriors as possible in one picture: 13 in one wide column (with TRP3 titles), 26 in two columns,
     -- 39 in three (names only). Past that the mouse wheel scrolls them.
-    local att = card.showComings and e.attendance -- outings only (Campaign.View), and only when asked for
     local members = {}
     for _, m in ipairs(KKC.sortedValues(e.members)) do if not m.outside then members[#members + 1] = m end end
     local many = s.members > ROWS
@@ -401,9 +405,6 @@ local function fillCard(e)
     setRows(rows, shown, function(m)
         local title = not many and KKC.rpTitle(m.name)
         local l = (title and (Theme.DIM .. title .. "|r ") or "") .. Theme.ClassLight(m.class) .. m.name .. "|r"
-        -- From the roll calls, only who came later or went early: "joined 19:12" after the name.
-        local note = att and use < 3 and KKC.RollCall.Note(att.names[m.name])
-        if note then l = l .. Theme.DIM .. "  " .. note .. "|r" end
         -- Our deaths aren't shown on the card (they stay in the data for the summaries); the skull is for foes slain.
         if use == 3 then return l end
         local dmg = (m.dmg or 0) > 0 and KKC.shortNumber(m.dmg) or ""
@@ -441,7 +442,7 @@ end
 function UI.ShowCard(e, keepScroll)
     if not e then return end
     card = card or buildCard()
-    if not keepScroll or card.engagement ~= e then card.memberOffset, card.showComings = 0, nil end
+    if not keepScroll or card.engagement ~= e then card.memberOffset = 0 end
     fillCard(e)
     card:Show()
 end

@@ -18,7 +18,7 @@
     RollCall.Comings(att)      { joined = { a... }, left = { a... } }, by time
     RollCall.ShowSheet()       a roll call now, on a sheet beside the raid panel, ready for Print Screen
     RollCall.Timeline(e)       an outing's roll calls one by one: who joined, who left, who was offline (text)
-    RollCall.ShowTimeline(e)   that text in its own window (the Roll calls button on an outing's battle card)
+    RollCall.ShowSide(e, card) that text on a side panel docked to the battle card (its Roll calls button)
 ]]
 
 local _, KKC = ...
@@ -282,58 +282,75 @@ function RollCall.Timeline(e, rich)
     return table.concat(lines, "\n")
 end
 
-local timeline
-function RollCall.ShowTimeline(e)
-    local text = RollCall.Timeline(e, true)
+-- The roll calls of an outing on a side panel, docked to the right of its battle card and as tall as it (the Roll
+-- calls button on the card shows and hides it). Only the roll calls: each one with who joined, who was gone and who
+-- was offline, and at the end who joined later and who left early.
+local SIDE_W = 400
+local side
+local function buildSide()
+    local Theme = KKC.Theme
+    local f = CreateFrame("Frame", "KorKronCompanionTimeline", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    f:SetSize(SIDE_W, 560)
+    f:SetFrameStrata("DIALOG")
+    f:EnableMouse(true)
+    f:SetClampedToScreen(true)
+    tinsert(UISpecialFrames, "KorKronCompanionTimeline")
+    f.title = Theme.SheetFrame(f, "Roll Calls")
+    f.sub = Theme.SheetText(f, 13, "CENTER")
+    f.sub:SetPoint("TOP", 0, -62)
+    f.sub:SetWidth(SIDE_W - 70)
+    local box = Theme.SheetPanel(f)
+    box:SetPoint("TOPLEFT", 30, -104)
+    box:SetPoint("BOTTOMRIGHT", -30, 30)
+    local scroll = CreateFrame("ScrollFrame", "KorKronCompanionTimelineScroll", box, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 10, -10)
+    scroll:SetPoint("BOTTOMRIGHT", -30, 10)
+    local body = CreateFrame("Frame", nil, scroll)
+    body:SetSize(SIDE_W - 100, 10)
+    scroll:SetScrollChild(body)
+    f.text = Theme.SheetText(body, 13)
+    f.text:SetPoint("TOPLEFT")
+    f.text:SetWidth(SIDE_W - 100)
+    f.text:SetSpacing(3)
+    f.body = body
+    local x = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    x:SetPoint("TOPRIGHT", -18, -18)
+    x:SetFrameLevel(f:GetFrameLevel() + 10)
+    x:SetScript("OnClick", function() f:Hide() end)
+    f:SetScript("OnHide", function() if f.onHide then f.onHide() end end)
+    f:Hide()
+    return f
+end
+
+-- Show the roll calls of e beside anchor (the battle card), or in the middle of the screen without one.
+function RollCall.ShowSide(e, anchor)
+    local text = e and RollCall.Timeline(e, true)
     if not text then return KKC.say("no roll calls were taken during this outing.") end
     local Theme = KKC.Theme
-    if not timeline then
-        local f = CreateFrame("Frame", "KorKronCompanionTimeline", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-        f:SetSize(520, 560)
-        f:SetPoint("CENTER", 0, 20)
-        f:SetFrameStrata("FULLSCREEN_DIALOG") -- above the battle card it was opened from
-        f:EnableMouse(true)
-        f:SetMovable(true)
-        f:SetClampedToScreen(true)
-        f:RegisterForDrag("LeftButton")
-        f:SetScript("OnDragStart", f.StartMoving)
-        f:SetScript("OnDragStop", f.StopMovingOrSizing)
-        tinsert(UISpecialFrames, "KorKronCompanionTimeline")
-        f.title = Theme.SheetFrame(f, "Roll Calls")
-        f.sub = Theme.SheetText(f, 13, "CENTER")
-        f.sub:SetPoint("TOP", 0, -62)
-        f.sub:SetWidth(440)
-        local box = Theme.SheetPanel(f)
-        box:SetPoint("TOPLEFT", 36, -90)
-        box:SetPoint("BOTTOMRIGHT", -36, 72)
-        local scroll = CreateFrame("ScrollFrame", "KorKronCompanionTimelineScroll", box, "UIPanelScrollFrameTemplate")
-        scroll:SetPoint("TOPLEFT", 10, -10)
-        scroll:SetPoint("BOTTOMRIGHT", -30, 10)
-        local body = CreateFrame("Frame", nil, scroll)
-        body:SetSize(400, 10)
-        scroll:SetScrollChild(body)
-        f.text = Theme.SheetText(body, 13)
-        f.text:SetPoint("TOPLEFT")
-        f.text:SetWidth(400)
-        f.text:SetSpacing(3)
-        f.body = body
-        local close = Theme.HallButton(f, "Close", 160, 32, nil, nil, function() f:Hide() end)
-        close.kkSheet = true
-        close:SetSelected(false)
-        close:SetPoint("BOTTOM", 0, 30)
-        local x = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-        x:SetPoint("TOPRIGHT", -18, -18)
-        x:SetFrameLevel(f:GetFrameLevel() + 10)
-        x:SetScript("OnClick", function() f:Hide() end)
-        timeline = f
+    side = side or buildSide()
+    side.engagement = e
+    side:ClearAllPoints()
+    if anchor then
+        side:SetHeight(anchor:GetHeight() or 680)
+        side:SetPoint("TOPLEFT", anchor, "TOPRIGHT", -6, 0)
+    else
+        side:SetHeight(560)
+        side:SetPoint("CENTER", 0, 20)
     end
     local att = e.attendance or RollCall.Attendance(e)
-    timeline.sub:SetText(Theme.DIM .. KKC.Report.Place(e) .. "  ~  " .. date("%A %d %B, %H:%M", e.start) .. " - "
-        .. date("%H:%M", e.stop or e.start) .. "  ~  " .. #att.calls .. " roll calls|r")
-    timeline.text:SetText(text)
-    timeline.body:SetHeight(math.max(10, (timeline.text:GetStringHeight() or 0) + 10))
-    timeline:Show()
+    side.sub:SetText(Theme.DIM .. date("%A %d %B, %H:%M", e.start) .. " - " .. date("%H:%M", e.stop or e.start)
+        .. "\n" .. #att.calls .. " roll calls|r")
+    side.text:SetText(text)
+    side.body:SetHeight(math.max(10, (side.text:GetStringHeight() or 0) + 10))
+    side:Show()
 end
+
+function RollCall.HideSide() if side then side:Hide() end end
+function RollCall.SideShown() return side ~= nil and side:IsShown() and side.engagement or nil end
+function RollCall.OnSideHidden(fn) side = side or buildSide(); side.onHide = fn end
+
+-- The roll calls in a window of their own (kept for callers without a card).
+function RollCall.ShowTimeline(e) return RollCall.ShowSide(e, nil) end
 
 -- ------------------------------------------------------------------------------------------------
 -- The roll call sheet: a roll call now, beside the raid panel, for a Print Screen

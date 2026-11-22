@@ -35,7 +35,13 @@ who fought (meter, sightings, sync) and damage/healing totals (meter). The battl
   `mergeGap` passes with no new PvP combat.
 - **Campaign**: one outing, the size the guild reports at (one post per night, "Time: 20:15 - 21:00"). Engagements
   less than `campaignGap` (30 min) apart, in any zone, are one campaign, so a wipe, corpse run and regroup stays in
-  it. Skirmishes (a stray hit, no kills) never join or bridge a campaign. Nothing is stored: campaigns are grouped from the log when needed (`Campaign.lua`), and a campaign view looks
+  it. Skirmishes (a stray hit, no kills) never join or bridge a campaign. Fights chain only with fights of the same
+  size of group (`Campaign.Scale`, from `groupSize`): a raid's (4+) make a campaign, those of 2 or 3 a **Patrol**
+  (friends questing after the raid), solo ones a **Lone Patrol**. So a patrol right after the raid, or a solo gank
+  between raid fights, never joins or breaks the raid's campaign. Fights logged before `groupSize` existed count as a
+  raid's and group as before. In the Battles list patrols start folded (`p:Folded`; a click on the +/- remembers
+  either way until /reload) and the lines of patrols and fights of 2-3 or solo are muted, so the raid's battles stand
+  out. A campaign over three or more zones names the first and "and N more" in its line. Nothing is stored: campaigns are grouped from the log when needed (`Campaign.lua`), and a campaign view looks
   like an engagement (summed damage and healing, enemies, kills, deaths, leaders), so the battle card and report texts
   serve both. Its account is kept on its first fight (`campaignDescription`). `/kkc card` opens the latest campaign;
   each fight can still be reported on its own from the Battles list, where fights are listed under their campaign.
@@ -109,7 +115,7 @@ out of combat (+1 s):  damage meter "Current" read ─┘
 ### Several raids at one battle: the synchronization report
 Every raid leader writes the report of their own raid, so the battle report, card and roll calls stay your raid's.
 When other raids of the guild report the same battle, the card gets a **Multi-raid report** button (the battles list shows
-"2 raids") that opens the *Battle* or *Campaign Synchronization Report*: the whole host first (raids, Kor'kron in
+"2 raids", and its "X against Y" there is the whole host against every foe any raid saw) that opens the *Battle* or *Campaign Synchronization Report*: the whole host first (raids, Kor'kron in
 all of them, enemies once each, kills), then each raid by its leader with its Kor'kron, and *Copy text* for the
 guild's tallies (`KKC.Host`, `KKC.HostText`). For a campaign it goes fight by fight: each fight's enemies are every
 raid's together with the most kills anyone saw per enemy, and the fights add up. Another raid is only what its
@@ -190,14 +196,14 @@ An outing's roll calls (from 10 minutes before its first fight to 5 after its la
 who **joined later** (first seen at a roll call when the one before it was already taken during the outing) and who
 **left early** (gone at a roll call taken before the last fight ended). Missing one roll call in the middle of the
 night notes nothing. The times are those of the roll calls, so within 10 minutes. Guildmates present at roll calls
-join the outing's warriors even if no fight came near them. The battle card shows none of it until the **Roll calls**
-button is clicked: then the note follows the name (`Ozzy  joined 22:18`); another click hides it, and each card opens
-without it. With the setting "Comings and goings in the report" (off by default,
+join the outing's warriors even if no fight came near them. The battle card itself shows nothing of the roll calls.
+With the setting "Comings and goings in the report" (off by default,
 `/kkc rollcall report on`) the report text adds `Joined later: Ozzy (22:18)` and `Left early: Zhara (23:05)`.
-Single fights show nothing of the roll calls (theirs are just their start and end). A right click on the **Roll calls**
-button of an outing's card (shown only when it has roll calls) opens the night roll call by roll call: the time, how many were with us
+Single fights show nothing of the roll calls (theirs are just their start and end). The **Roll calls** button of an
+outing's card (shown only when it has roll calls) opens and closes a side panel docked to the card's right edge, as
+tall as the card (`RollCall.ShowSide`), with only the roll calls: the time of each, how many were with us
 and whether a screenshot was taken, then who joined, who was gone and who was offline since the roll call before,
-and at the end who joined later and who left early.
+and at the end who joined later and who left early. It follows the card to another outing and closes with it.
 
 Addons can't take screenshots on this client, so `/kkc rollcall` (or shift click on the minimap button) takes a roll
 call now, shows it on a sheet beside the raid panel (opened when the client allows) and waits for Print Screen; the
@@ -214,7 +220,7 @@ faction banner and emblem, inset boxes, icon buttons. Sections on the left:
 | **Chronicle** | Your battles over Today / This week / Last week / This month / Last month / All time: four tiles (battles, foes slain, Kor'kron fallen, first blow ours/theirs), the standing of the guilds from Overlord on top, then the details as sections (`Summary.Sections`): a yellow heading over two columns, name and number (contested ground, fought beside, most slain, by race and class, greatest battle, deadliest blades, most mending). Deadliest blades and most mending are a rate: damage or healing a minute of the battles each guildie was in, ranked only with at least 3 of the period's battles (fewer when the period has fewer), guildies outside our group left out. Totals mostly measured who came most often. Scribe chronicle (copy) and Sound the horn (one line to guild chat). |
 | **Battles** | Every battle you fought, newest first, 19 a page; skirmishes on request. Click one for its battle card.  A campaign folds its fights away with its +/-, a day with a click on its heading (until /reload). |
 | **From the field** | The same chronicle over the guild feed (guildies' battles you weren't in). Copy only, never shared. Says so when guild sync is off. |
-| **War Ledger** | Tiered challenges, Legacy style: total slain, unique foes, battles fought, first blows, ambushes weathered, kills in how many zones, each land (Stranglethorn Vale, Hillsbrad, Alterac, Arathi, Ashenvale, the Barrens, the Plaguelands, around Blackrock Mountain, Tanaris and Silithus), each enemy race, each class. A row shows the next tier with a progress bar. Kills by zone are kept from 0.4 on, filled once from the battles still in the log.  On the left page, your standing (`Ledger.Standing`): deeds done (tiers of all) and the three challenges closest to their next tier. |
+| **War Ledger** | Tiered challenges, Legacy style: total slain, unique foes, final blows, battles fought, first blows, ambushes weathered, kills in how many zones, each land (Stranglethorn Vale, Hillsbrad, Alterac, Arathi, Ashenvale, the Barrens, the Plaguelands, around Blackrock Mountain, Tanaris and Silithus), each enemy race, each class. A row shows the next tier with a progress bar. Kills by zone are kept from 0.4 on, filled once from the battles still in the log.  On the left page, your standing (`Ledger.Standing`): deeds done (tiers of all) and the three challenges closest to their next tier. |
 | **Settings** | Announcing battles, who is told, guild sync, roll calls in the report, Sound the horn (off by default: the buttons that post a line to guild chat are hidden, `settings.horn`), Overlord (on unless switched off: `settings.overlord == false`), the minimap button, the size of the hall. On the left page: a test battle and diagnostics. |
 
 Weeks and days follow the server's reset (`C_DateAndTime.GetWeeklyResetStartTime`, Wednesday on EU); months are
@@ -237,7 +243,7 @@ right click resets), since its two pages are laid out for fixed proportions.
 
 **In the Legacy window:** the War Ledger is one more category, "Kor'kron War Ledger", at the end of the Legacy
 challenge categories (`LegacyLedger.lua`). Choosing it shows our own cards where Blizzard's challenges are: a card of
-fun numbers (`Ledger.Highlights`: slain, battles, slain per fall, most slain foe, favourite prey, most fought over,
+fun numbers (`Ledger.Highlights`: slain, final blows, battles, slain per fall, most slain foe, favourite prey, most fought over,
 biggest and longest battle, first blows, ambushes turned), then the tiered challenges (`Ledger.Tracks`), drawn with the
 Legacy window's own card, ribbon, icon frame and progress bar art. (An earlier side tab laid the whole hall over the
 window; it looked like an old design and was removed.) The hall's own War Ledger section draws the same cards
@@ -341,8 +347,14 @@ statistics don't have to be computed in game.
 - `log`: your engagements, newest first, minor ones included (flagged). Kept 365 days / max 3000. It's account-wide;
   `owner` says which of your characters fought.
 - `feed`: guildies' fights you weren't in. Kept 120 days / max 1500.
-- `ledger`: per character, slain by race, by class, by enemy name, and totals. Updated from your own honor kills only,
-  so syncing never counts a kill twice. It can be rebuilt from `log`.
+- `ledger`: per character, two counts. `total`, `race`, `class`, `enemy`, `zone`: your **final blows** (your own
+  killing blows and honor kills). `slain` (same shape): every foe slain in a battle where you did your share
+  (`Ledger.Helped`: at least half the average damage of those of ours who did damage, or half the average healing of
+  those who healed; alone, any; a final blow always), the battle's kills per foe at least your final blows, plus its
+  unnamed kills. The meter has damage per fight, not per foe, so this is "slain in a battle you pulled your weight
+  in". The challenges count `slain`; final blows have one track. `slain` came in 0.5.3 and was filled once from the
+  battles still in `log`, with older final blows added as slain so it's never below them. Only your own battles feed
+  either, so syncing never counts a kill twice.
 
 One engagement record (both lists), everything needed for later statistics:
 

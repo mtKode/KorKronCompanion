@@ -16,7 +16,7 @@ banner by your minimap.
 | Post the report in guild or officer chat | In the Scribe report window: **Guild chat** / **Officer chat** (click twice; it posts a line every 1.5 s) |
 | Post one line about a battle in guild chat | Off by default. Settings → **Sound the horn**, then Battle card → **Sound the horn** (in the Chronicle: a line about the whole period) |
 | A clean screenshot of the card | Battle card → **Capture likeness** hides the buttons for a few seconds; press Print Screen |
-| See who came and went through a night | Battle card of a campaign → **Roll calls** shows "joined 19:12" or "left 20:30" after the names (click again to hide). Right click it for the night roll call by roll call |
+| See who came and went through a night | Battle card of a campaign → **Roll calls** opens the roll calls beside the card: each one, and who joined later or left early (click again to close) |
 | See every raid of the guild at one battle | Battle card → **Multi-raid report** (shows only with guild sync, when other raids reported) |
 | Take a roll call now | `/kkc rollcall`, or shift click the minimap banner |
 | See battles guildies fought without you | Hall → **From the field** (needs guild sync) |
@@ -42,7 +42,11 @@ banner by your minimap.
   after a minute without PvP combat, so fights with short breaks are one battle.
 - Notable or skirmish: a battle with a kill, one of ours fallen, 2+ enemies or 20+ seconds of PvP is notable. Anything
   less is a skirmish: kept, never announced or shared.
-- Battles less than 30 minutes apart, in any zone, form a campaign: one report for the night.
+- Battles less than 30 minutes apart, in any zone, form a campaign: one report for the night. Only fights of the
+  same kind chain: a raid's (4+ in the group) make a **campaign**, those with 2 or 3 of you (questing with a friend
+  after the raid) a **patrol**, your solo ones a **lone patrol**. A patrol never joins the raid's campaign.
+- In the Battles list the raid's battles stand out; patrols are folded away (click the **+** to open one) and their
+  lines are muted.
 
 **Who counts**
 - Ours: everyone in your group when a fight starts or ends, near you or not. Better one too many on the report than
@@ -56,7 +60,11 @@ banner by your minimap.
   highest of the three counts, so one death is never counted twice.
 - Still a minimum: kills far from you aren't heard, so reports say "at least 10 slain". Guild sync fills in what
   guildies' addons heard.
-- The War Ledger counts only your own killing blows, so sharing can never count a kill twice there.
+- The War Ledger counts two ways. **Slain**: every foe who fell in a battle where you did your share, at least
+  half the average damage (or healing) of those of ours who did any; a final blow of yours always counts. The meter
+  gives damage per fight, not per foe, so this means "in a battle you pulled your weight in". **Final blows**: only
+  the kills you landed yourself. The challenges count the slain; final blows have a challenge of their own. Only your
+  own battles count, so sharing can never count a kill twice there.
 - Damage and healing come from your damage meter. Rankings use damage (healing) a minute of the battles each guildie
   was in, for those in at least 3 battles of the period, so being there often doesn't win by itself.
 
@@ -85,7 +93,8 @@ the guilds is Overlord's own rating. Nothing is sent to it.
 | **Battle** | One fight: from the first PvP hit until a minute without combat |
 | **Notable** | A battle worth reporting: a kill, one of ours fell, 2+ enemies, or 20+ seconds of PvP. Others are… |
 | **Skirmish** | …a passing hit with no kills. Kept, never announced; Battles → **Show skirmishes** lists them |
-| **Campaign** (outing) | Several battles less than 30 minutes apart, as one report for the night |
+| **Campaign** (outing) | Several battles of a raid (4+ in the group) less than 30 minutes apart, as one report for the night |
+| **Patrol** / **Lone patrol** | The same for fights with 2 or 3 in the group / on your own. Kept apart from the raid's campaign, folded in the Battles list |
 | **Battle card** | The sheet of one battle or campaign: who fought, the foes, the numbers, and its buttons |
 | **First into battle** | The guildie whose fight started first. Named in the report, nothing more |
 | **First blow, ours / theirs** | Who struck first: we did, or they ambushed us |
@@ -93,10 +102,12 @@ the guilds is Overlord's own rating. Nothing is sent to it.
 | **Roll call** | A list of the guild in your group (online, wherever they are), taken every 10 minutes. A campaign only notes from them who joined later or left early |
 | **Guildies seen outside our raid** | Guildies the meter saw fighting who weren't in your group: likely another raid's, so not counted as yours |
 | **From the field** | Guildies' battles that you weren't in (guild sync) |
-| **Multi-raid report** | Every raid of the guild at one battle, each from its own addon users (guild sync) |
+| **Multi-raid report** | Every raid of the guild at one battle, each from its own addon users (guild sync). In the Battles list such a battle's "X against Y" counts all the raids |
 | **Contested ground** | Where you fought most in the period |
 | **Deadliest blades / Most mending** | Damage / healing **a minute** of the battles each guildie was in, for those in 3+ battles of the period (not totals, so being there often doesn't win it) |
-| **War Ledger** | Your own kills and challenges with tiers (Jungle Killer, Hunter of Humans…). Only your own killing blows count |
+| **War Ledger** | Your own kills and challenges with tiers (Jungle Killer, Hunter of Humans…), counted as slain and as final blows |
+| **Slain** (War Ledger) | Foes who fell in a battle where you did at least half the average damage or healing, plus your final blows |
+| **Final blow** | A kill you landed yourself: the last hit |
 | **Tier** | A step of a challenge: slay 10, then 50, then 100… "Tier 2 of 4" is the step you're working on |
 | **Nemesis** | One of Overlord's five most wanted enemies of the week (needs the Overlord addon), marked with a skull |
 | **Standing of the guilds** | Overlord's guild rating for all of Forever, shown on top of the Chronicle (needs Overlord) |

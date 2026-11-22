@@ -1,7 +1,11 @@
 --[[
-  War Ledger: your own running PvP totals per character (slain by race, by class, by name) and milestones.
-  Only kills you got yourself count (your killing blows and honor kills), so syncing with guildies never counts a
-  kill twice.
+  War Ledger: your own running PvP totals per character (slain by race, by class, by name) and milestones, counted
+  two ways:
+    slain        (l.slain)  every foe slain in a battle where you did a real share of the damage or healing
+                            (Ledger.Helped), plus your own final blows. The challenges count these.
+    final blows  (l.total, l.enemy, l.race, l.class, l.zone)  only the kills you landed yourself.
+  The meter gives each of us damage and healing for the whole fight, not per foe, so "slain" means slain in a battle
+  you pulled your weight in. Only your own battles count, so syncing with guildies never counts a kill twice.
   The Hall of the Kor'kron (Hub.lua) shows them as tiered challenges, Legacy style: Ledger.Tracks().
 ]]
 
@@ -33,7 +37,8 @@ function Ledger.Mine()
     local key = charKey()
     local l = KKC.db.ledger[key]
     if not l then
-        l = { total = 0, engagements = 0, fallen = 0, race = {}, class = {}, enemy = {}, zone = {} }
+        l = { total = 0, engagements = 0, fallen = 0, race = {}, class = {}, enemy = {}, zone = {},
+            slain = { total = 0, race = {}, class = {}, enemy = {}, zone = {} } }
         KKC.db.ledger[key] = l
     end
     -- Kills by zone came later (0.4): filled once from the battles still in the log.
@@ -46,6 +51,7 @@ function Ledger.Mine()
             end
         end
     end
+    if not l.slain then Ledger.FillSlain(l) end
     return l
 end
 
@@ -56,18 +62,115 @@ local function crossed(before, after)
     end
 end
 
-local function add(map, key, n, title)
-    if not key then return end
-    local before = map[key] or 0
-    map[key] = before + n
-    local m = crossed(before, map[key])
-    if m and title then KKC.say(("%sLedger:|r %d %s slain - |cffffd100%s|r"):format(KKC.GOLD, m, key, title)) end
+function Ledger.RaceTitle(race) return RACE_TITLES[race] or "Champion" end
+function Ledger.ClassTitle(class) return CLASS_TITLES[class] or "Champion" end
+
+-- You pulled your weight in a battle: at least half the average damage of those of ours who did damage, or half the
+-- average healing of those who healed. Alone, any damage or healing does. A final blow of yours always counts.
+function Ledger.Helped(e, name)
+    name = name or KKC.me()
+    if next(e.ownKills or {}) then return true end
+    local me = e.members and e.members[name]
+    if not me then return false end
+    local function avg(field)
+        local sum, n = 0, 0
+        for _, m in pairs(e.members) do
+            if not m.outside and (m[field] or 0) > 0 then sum, n = sum + m[field], n + 1 end
+        end
+        return n > 0 and sum / n or nil
+    end
+    for _, field in ipairs({ "dmg", "heal" }) do
+        local a = avg(field)
+        if a and (me[field] or 0) > 0 and me[field] >= a / 2 then return true end
+    end
+    return false
 end
 
--- Called once per engagement when it closes.
+-- The foes slain in a battle you helped in: name -> count (your final blows at least), and the unnamed ones.
+local function slainIn(e)
+    local out = {}
+    if not Ledger.Helped(e) then return out, 0 end
+    for name, en in pairs(e.enemies or {}) do
+        local n = math.max(en.kills or 0, (e.ownKills or {})[name] or 0)
+        if n > 0 then out[name] = n end
+    end
+    for name, n in pairs(e.ownKills or {}) do
+        if not (e.enemies or {})[name] then out[name] = math.max(out[name] or 0, n) end
+    end
+    return out, e.unnamedKills or 0
+end
+
+-- One battle into the slain counts. say: milestone lines in chat (not while filling from the log).
+local function addSlain(l, e, say)
+    local sl = l.slain
+    local named, unnamed = slainIn(e)
+    local function bump(map, key, n)
+        if not key then return nil end
+        local before = map[key] or 0
+        map[key] = before + n
+        return say and crossed(before, map[key]) or nil
+    end
+    local before = sl.total
+    for name, n in pairs(named) do
+        local en = (e.enemies or {})[name] or {}
+        sl.total = sl.total + n
+        bump(sl.enemy, name, n)
+        bump(sl.zone, e.zone, n)
+        local m = bump(sl.race, en.race, n)
+        if m then
+            KKC.say(("%sLedger:|r %d %s slain - |cffffd100%s|r"):format(KKC.GOLD, m, en.race, Ledger.RaceTitle(en.race)))
+        end
+        local cm = bump(sl.class, en.class, n)
+        if cm then
+            KKC.say(("%sLedger:|r %d %s slain - |cffffd100%s|r"):format(KKC.GOLD, cm, KKC.className(en.class) .. "s",
+                Ledger.ClassTitle(en.class)))
+        end
+    end
+    sl.total = sl.total + unnamed
+    if unnamed > 0 then bump(sl.zone, e.zone, unnamed) end
+    local m = say and crossed(before, sl.total)
+    if m then KKC.say(("%sLedger:|r %d enemies slain in total."):format(KKC.GOLD, m)) end
+end
+
+-- The slain counts came later (0.5.3): filled once from your battles still in the log. Final blows from battles that
+-- have since left the log count as slain too (the least they were), so slain is never below final blows.
+function Ledger.FillSlain(l)
+    l.slain = { total = 0, race = {}, class = {}, enemy = {}, zone = {} }
+    local me = KKC.me()
+    local fb = { total = 0, race = {}, class = {}, enemy = {}, zone = {} } -- final blows of the battles in the log
+    for _, e in ipairs(KKC.db.log or {}) do
+        if e.owner == me and e.ledgered and not e.test then
+            addSlain(l, e, false)
+            for name, n in pairs(e.ownKills or {}) do
+                local en = (e.enemies or {})[name] or {}
+                fb.total = fb.total + n
+                fb.enemy[name] = (fb.enemy[name] or 0) + n
+                if e.zone then fb.zone[e.zone] = (fb.zone[e.zone] or 0) + n end
+                if en.race then fb.race[en.race] = (fb.race[en.race] or 0) + n end
+                if en.class then fb.class[en.class] = (fb.class[en.class] or 0) + n end
+            end
+        end
+    end
+    local sl = l.slain
+    sl.total = sl.total + math.max(0, (l.total or 0) - fb.total)
+    for _, k in ipairs({ "enemy", "zone", "race", "class" }) do
+        for key, n in pairs(l[k] or {}) do
+            local older = n - (fb[k][key] or 0)
+            if older > 0 then sl[k][key] = (sl[k][key] or 0) + older end
+        end
+    end
+end
+
+local function add(map, key, n)
+    if not key then return end
+    map[key] = (map[key] or 0) + n
+end
+
+-- Called once per engagement when it closes. The milestone lines in chat follow the slain counts; final blows have
+-- one line of their own at their milestones.
 function Ledger.Record(e)
     if e.test or e.ledgered then return end
-    local l = Ledger.Mine() -- before marking this one: a first fill of kills by zone mustn't count it too
+    local l = Ledger.Mine() -- before marking this one: a first fill from the log mustn't count it too
     e.ledgered = true
     l.engagements = l.engagements + 1
     for name, n in pairs(e.ownKills or {}) do
@@ -75,19 +178,13 @@ function Ledger.Record(e)
         local before = l.total
         l.total = l.total + n
         local m = crossed(before, l.total)
-        if m then KKC.say(("%sLedger:|r %d enemies slain in total."):format(KKC.GOLD, m)) end
+        if m then KKC.say(("%sLedger:|r %d final blows."):format(KKC.GOLD, m)) end
         add(l.enemy, name, n)
         add(l.zone, e.zone, n)
-        add(l.race, en.race, n, en.race and RACE_TITLES[en.race])
-        if en.class then
-            local before = l.class[en.class] or 0
-            l.class[en.class] = before + n
-            local cm = crossed(before, l.class[en.class])
-            if cm then
-                KKC.say(("%sLedger:|r %d %s slain - |cffffd100%s|r"):format(KKC.GOLD, cm, KKC.className(en.class) .. "s", CLASS_TITLES[en.class] or "Champion"))
-            end
-        end
+        add(l.race, en.race, n)
+        add(l.class, en.class, n)
     end
+    addSlain(l, e, true)
     local me = e.members and e.members[KKC.me()]
     if me and me.died then l.fallen = l.fallen + 1 end
 end
@@ -103,11 +200,12 @@ end
 
 function Ledger.Print()
     local l = Ledger.Mine()
-    KKC.say(("War Ledger for %s: %d slain (%d unique), %d engagements, fallen %d times."):format(
-        KKC.me(), l.total, KKC.count(l.enemy), l.engagements, l.fallen))
-    KKC.say("  By race: " .. top(l.race, 8))
-    KKC.say("  By class: " .. top(l.class, 9, KKC.className))
-    KKC.say("  Most slain: " .. top(l.enemy, 5))
+    local sl = l.slain
+    KKC.say(("War Ledger for %s: %d slain (%d unique), %d final blows, %d engagements, fallen %d times."):format(
+        KKC.me(), sl.total, KKC.count(sl.enemy), l.total, l.engagements, l.fallen))
+    KKC.say("  By race: " .. top(sl.race, 8))
+    KKC.say("  By class: " .. top(sl.class, 9, KKC.className))
+    KKC.say("  Most slain: " .. top(sl.enemy, 5))
 end
 
 -- ------------------------------------------------------------------------------------------------
@@ -204,17 +302,19 @@ function Ledger.Highlights()
     end
     local out = {}
     local function add(label, value) if value then out[#out + 1] = { label, value } end end
-    add("Enemies slain", ("%d  (%d different)"):format(l.total, KKC.count(l.enemy)))
+    local sl = l.slain
+    add("Enemies slain", ("%d  (%d different)"):format(sl.total, KKC.count(sl.enemy)))
+    add("Final blows", ("%d  (%d different)"):format(l.total, KKC.count(l.enemy)))
     add("Battles of note", tostring(c.battles))
     add("Fallen", tostring(l.fallen))
-    if l.total > 0 then add("Slain per fall", ("%.1f"):format(l.total / math.max(l.fallen, 1))) end
-    local foe, n = most(l.enemy)
+    if sl.total > 0 then add("Slain per fall", ("%.1f"):format(sl.total / math.max(l.fallen, 1))) end
+    local foe, n = most(sl.enemy)
     if foe then add("Most slain foe", ("%s  (%d times)"):format(foe, n)) end
-    local race, rn = most(l.race)
+    local race, rn = most(sl.race)
     if race then add("Favourite prey", ("%s  (%d)"):format(PLURAL[race] or race, rn)) end
-    local class, cn = most(l.class)
+    local class, cn = most(sl.class)
     if class then add("Most slain class", ("%ss  (%d)"):format(KKC.className(class) or class, cn)) end
-    local zone, zn = most(l.zone)
+    local zone, zn = most(sl.zone)
     if zone and zn > 0 then add("Bloodiest ground", ("%s  (%d slain)"):format(zone, zn)) end
     local place, pn = most(places)
     if place then add("Most fought over", ("%s  (%d battle%s)"):format(place, pn, pn == 1 and "" or "s")) end
@@ -234,7 +334,8 @@ end
 function Ledger.NotableBattles() return fromLog().battles end
 
 function Ledger.Tracks()
-    local l, c = Ledger.Mine(), fromLog()
+    local fb, c = Ledger.Mine(), fromLog()
+    local l = fb.slain -- the challenges count the slain; final blows have a track of their own
     local own = UnitFactionGroup("player") or "Horde"
     local foe = KKC.enemyFaction()
     local list = {}
@@ -247,6 +348,10 @@ function Ledger.Tracks()
     add(track("INV_Misc_Spyglass_03", {
         { 10, "Many Faces" }, { 25, "Known to the Enemy" }, { 50, "A Name They Whisper" }, { 100, "A Name They Fear" },
     }, KKC.count(l.enemy), function(g) return ("Slay %d different enemy players."):format(g) end))
+    add(track("Ability_Rogue_Eviscerate", {
+        { 10, "Finisher" }, { 50, "The Last Thing They See" }, { 100, "Executioner" }, { 250, "Headsman of the " .. own },
+        { 500, "Deathblow" },
+    }, fb.total, function(g) return ("Land %d final blows on enemy players."):format(g) end))
     add(track(own == "Horde" and "INV_BannerPVP_01" or "INV_BannerPVP_02", {
         { 5, "Called to Arms" }, { 25, "Seasoned Warrior" }, { 100, "Hardened by War" }, { 250, "Born for Battle" },
     }, c.battles, function(g) return ("Fight %d battles of note."):format(g) end))

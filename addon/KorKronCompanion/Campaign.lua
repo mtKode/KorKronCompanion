@@ -7,6 +7,8 @@
   logged before this existed. Engagements stay the unit of the statistics and the War Ledger; a campaign is a view.
 
     Campaign.Group(list)   newest-first engagements -> newest-first campaigns { fights (newest first), start, stop, id }
+                           (a warband's fights, those of 2 or 3 and your solo ones each chain on their own)
+    Campaign.Scale(e)      "solo", "small" (2-3 in the group) or "band" (4+)
     Campaign.View(c)       an engagement-shaped table for the battle card and the report texts (campaign = true)
     Campaign.Latest()      the view of the newest campaign with two or more fights, or nil
 ]]
@@ -19,23 +21,38 @@ KKC.Campaign = Campaign
 -- or more with lulls in between; separate evenings never come this close.
 function Campaign.Gap() return KKC.settings().campaignGap or 1800 end
 
+-- How big the group was in a fight: "solo", "small" (2 or 3: friends questing together) or "band" (4 or more).
+-- From the group's size in the fight. Fights logged before 0.4 (14 November 2026) don't have it: "band", so they
+-- group as they always did.
+local function scale(e)
+    local n = e.groupSize
+    if n == nil then return "band" end
+    if n <= 1 then return "solo" end
+    return n <= 3 and "small" or "band"
+end
+Campaign.Scale = scale
+
 function Campaign.Group(list)
-    local out, current = {}, nil
+    local out, current = {}, {} -- current: the campaign being gathered, one per scale
     local gap = Campaign.Gap()
     for _, e in ipairs(list or {}) do
+        local s = scale(e)
         if e.test then -- never part of anything
         elseif e.minor then
             -- A skirmish (a stray hit, no kills) stands alone: it never joins a campaign or bridges two fights into
-            -- one, so a brush with a passer-by can't turn a single battle into a "campaign".
+            -- one, so a brush with a passer-by can't turn a battle into a "campaign".
             out[#out + 1] = { fights = { e }, start = e.start, stop = e.stop or e.start }
         else
-            -- The list is newest first: e is older than everything in current.
-            if current and current.start - (e.stop or e.start) <= gap then
-                current.fights[#current.fights + 1] = e
-                current.start = math.min(current.start, e.start)
+            -- The list is newest first: e is older than everything in current. A warband's fights, those of two or
+            -- three (friends questing together after the raid: a Patrol) and your fights on your own (a Lone Patrol)
+            -- each chain on their own, even when they come close together: the raid's night stays the raid's.
+            local c = current[s]
+            if c and c.start - (e.stop or e.start) <= gap then
+                c.fights[#c.fights + 1] = e
+                c.start = math.min(c.start, e.start)
             else
-                current = { fights = { e }, start = e.start, stop = e.stop or e.start }
-                out[#out + 1] = current
+                current[s] = { fights = { e }, start = e.start, stop = e.stop or e.start }
+                out[#out + 1] = current[s]
             end
         end
     end
@@ -44,6 +61,7 @@ function Campaign.Group(list)
         c.id = c.oldest.id
         c.minor = true
         for _, e in ipairs(c.fights) do if not e.minor then c.minor = false end end
+        c.scale = scale(c.oldest)
     end
     return out
 end
@@ -55,7 +73,7 @@ function Campaign.View(c)
         start = c.start, stop = c.stop, zone = first.zone, subzone = first.subzone,
         fights = #c.fights, pvpSeconds = 0, allies = 0, ambushes = 0, struck = 0, minor = c.minor,
         enemies = {}, members = {}, ownKills = {}, reports = {}, leaders = nil, leadFights = {},
-        places = {}, zones = {}, description = first.campaignDescription,
+        places = {}, zones = {}, description = first.campaignDescription, scale = c.scale or scale(first),
     }
     v.reports = first.reports -- first into battle: whoever opened the campaign's first fight
     v.fightList = c.fights    -- newest first; the synchronization report goes through them (KKC.Host)
@@ -123,6 +141,7 @@ end
 -- What an outing is called: a campaign with guildies, a lone patrol on your own. Returns the name and its lowercase.
 function Campaign.Name(view)
     if KKC.count(view.members) <= 1 then return "Lone Patrol", "lone patrol" end
+    if view.scale == "small" then return "Patrol", "patrol" end
     return "Campaign", "campaign"
 end
 

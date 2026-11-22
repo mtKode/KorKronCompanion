@@ -51,11 +51,20 @@ local function redrawDim()
 end
 
 -- A battle in one colored line: the place in blue, the enemy count in their faction's color, kills green, our losses
--- red, the rest dim. "Tarren Mill - 4 against 6, 5+ slain, 1 fallen".
-local function colored(e)
+-- red, the rest dim. "Tarren Mill - 4 against 6, 5+ slain, 1 fallen". host (KKC.Host): more raids of the guild were
+-- there, and "X against Y" is the whole host against every foe any of them saw (each name once); the rest stays yours.
+-- A fight of two or three, or on your own, is quieter: the place and the numbers dim, so the warband's battles stand
+-- out. A campaign over several zones names the first and how many more, so its numbers keep their room.
+local function colored(e, host)
     local st = KKC.Stats(e)
-    local parts = { Theme.PLACE .. KKC.Report.Place(e) .. "|r" .. Theme.DIM .. " - |r" .. st.members .. Theme.DIM
-        .. " against |r" .. Theme.Foe() .. st.enemies .. "|r" }
+    local quiet = (e.scale or KKC.Campaign.Scale(e)) ~= "band"
+    local ours = host and math.max(host.korkron, st.members) or st.members
+    local theirs = host and math.max(KKC.count(host.enemies), st.enemies) or st.enemies
+    local place = KKC.Report.Place(e)
+    if e.campaign and #(e.zones or {}) > 2 then place = ("%s and %d more"):format(e.zones[1], #e.zones - 1) end
+    local parts = { (quiet and Theme.DIM or Theme.PLACE) .. place .. "|r" .. Theme.DIM .. " - |r"
+        .. (quiet and (Theme.DIM .. ours .. " against " .. theirs .. "|r")
+            or (ours .. Theme.DIM .. " against |r" .. Theme.Foe() .. theirs .. "|r")) }
     if e.campaign then parts[#parts + 1] = Theme.DIM .. e.fights .. " clashes|r" end
     if st.kills > 0 then parts[#parts + 1] = Theme.GOOD .. st.kills .. "+ slain|r" end
     if #st.fallen > 0 then parts[#parts + 1] = Theme.BAD .. #st.fallen .. " fallen|r" end
@@ -68,12 +77,12 @@ local function headline(e)
     local raids = host and (Theme.DIM .. "~|r " .. Theme.HALL_GOLD .. #host.raids .. " raids|r") or nil
     -- A campaign's row is marked by its card and its +/-, its name and end are in the tooltip: the row keeps the room for
     -- the numbers (with "Campaign" and "~ until 21:10" too they were cut off).
-    if e.campaign then return colored(e) .. (raids and ("  " .. raids) or "") end
+    if e.campaign then return colored(e, host) .. (raids and ("  " .. raids) or "") end
     local tags = {}
     if host then tags[#tags + 1] = Theme.HALL_GOLD .. #host.raids .. " raids|r" end
     if e.minor then tags[#tags + 1] = Theme.DIM .. "skirmish|r" end
     if e.feed then tags[#tags + 1] = Theme.DIM .. "by " .. (KKC.Initiator(e) or "?") .. "|r" end
-    return colored(e) .. (#tags > 0 and ("  " .. Theme.DIM .. "~|r " .. table.concat(tags, ", ")) or "")
+    return colored(e, host) .. (#tags > 0 and ("  " .. Theme.DIM .. "~|r " .. table.concat(tags, ", ")) or "")
 end
 
 -- How many rows of `step` pixels fit in `frame` between `top` and `bottom` pixels of margin. Fonts and the docked
@@ -166,12 +175,14 @@ local function battleRow(parent, width)
     hl:SetAllPoints()
     local F = Theme.F()
     hl:SetColorTexture(F.accent[1], F.accent[2], F.accent[3], 0.22)
-    b.when = Theme.LightText(b, 12)
+    -- A step smaller than the rest of the page, and the time column only as wide as it needs: a battle's line holds
+    -- a lot (place, numbers, slain, fallen, raids).
+    b.when = Theme.LightText(b, 11)
     b.when:SetPoint("LEFT", 4, 0)
-    b.when:SetWidth(64)
+    b.when:SetWidth(54)
     b.when:SetWordWrap(false)
-    b.what = Theme.LightText(b, 12)
-    b.what:SetPoint("LEFT", 70, 0)
+    b.what = Theme.LightText(b, 11)
+    b.what:SetPoint("LEFT", 60, 0)
     b.what:SetPoint("RIGHT", -20, 0)
     b.what:SetWordWrap(false)
     -- A small arrow at the end of each battle: it opens something (gold under the mouse).
@@ -630,8 +641,15 @@ local function buildBattles(parent)
     p:SetAllPoints()
     p:Hide()
     p.offset, p.showMinor = 0, false
-    p.collapsed = {} -- campaign ids folded away (until /reload)
+    p.collapsed = {} -- campaign ids folded away (true) or opened (false), until /reload; unset: patrols folded
     p.collapsedDays = {} -- days ("2026-11-14") folded away
+    -- A campaign's fights are shown until folded; a patrol's (two or three, or alone) are folded until opened, so
+    -- an evening of questing doesn't bury the warband's battles.
+    function p:Folded(view)
+        local set = self.collapsed[view.id]
+        if set ~= nil then return set end
+        return view.scale ~= "band"
+    end
 
     -- The same periods as the Chronicle (and the same choice: switching sections keeps it).
     p.periods = {}
@@ -654,7 +672,7 @@ local function buildBattles(parent)
         local r = battleRow(box, 610)
         r:SetPoint("TOPLEFT", 8, -8 - (i - 1) * 21)
         r.onToggle = function(e)
-            p.collapsed[e.id] = not p.collapsed[e.id] or nil
+            p.collapsed[e.id] = not p:Folded(e)
             p:Refresh()
         end
         r.onDayToggle = function(key)
@@ -748,7 +766,7 @@ local function buildBattles(parent)
             if #fights > 0 then dayOf(fights[#fights].start) end
             if #c.fights > 1 and #fights > 0 then
                 local view = KKC.Campaign.View(c)
-                local folded = self.collapsed[view.id] and true or false
+                local folded = self:Folded(view)
                 list[#list + 1] = { e = view, collapsed = folded }
                 if not folded then
                     for _, e in ipairs(fights) do list[#list + 1] = { e = e, inCampaign = true } end
@@ -882,8 +900,9 @@ local function buildLedger(parent)
         local C = KKC.LegacyLedger and KKC.LegacyLedger.Cards
         if not C then return end
         local l = KKC.Ledger.Mine()
-        self.sub:SetText(Theme.DIM .. ("%s: %d slain, %d unique foes, fallen %d times. Only your own killing blows count.")
-            :format(KKC.me() or "?", l.total, KKC.count(l.enemy), l.fallen) .. "|r")
+        self.sub:SetText(Theme.DIM .. ("%s: %d slain, %d final blows, %d unique foes, fallen %d times. Slain: foes "
+            .. "who fell in battles where you did your share of the damage or healing.")
+            :format(KKC.me() or "?", l.slain.total, l.total, KKC.count(l.slain.enemy), l.fallen) .. "|r")
         local tracks = KKC.Ledger.Tracks()
         local items = { { summary = KKC.Ledger.Highlights() } }
         for _, t in ipairs(tracks) do items[#items + 1] = { track = t } end
@@ -1083,8 +1102,8 @@ local function buildSettings(parent)
         onOff(self.rollReport, set.rollcallsInReport,
             "On: the report of a campaign adds who joined later and who left early, with the time of the roll call "
                 .. "that noticed it (roll calls are taken every 10 minutes). One or two lines more to paste.",
-            "Off: the report lists the Kor'kron by name only. On the battle card, the Roll calls button shows who "
-                .. "joined later or left early (right click: the night roll call by roll call).")
+            "Off: the report lists the Kor'kron by name only. On the battle card, the Roll calls button opens the "
+                .. "roll calls beside the card, with who joined later or left early.")
         onOff(self.horn, set.horn,
             "On: battle cards and the Chronicle get a Sound the horn button. One click posts a one-line account of the "
                 .. "battle in guild chat (and to Discord, if guild chat is linked there).",
@@ -1522,7 +1541,7 @@ local function refreshHeader()
     local sep = Theme.DIM .. "  ~  |r"
     hall.name:SetText(Theme.ClassLight(class) .. (KKC.me() or "?") .. "|r")
     hall.sub:SetText(Theme.DIM .. "All time:  |r"
-        .. Theme.GOOD .. l.total .. " slain|r" .. sep .. Theme.HALL_GOLD .. KKC.Ledger.NotableBattles() .. " battles|r"
+        .. Theme.GOOD .. l.slain.total .. " slain|r" .. sep .. Theme.GOOD .. l.total .. " final blows|r" .. sep .. Theme.HALL_GOLD .. KKC.Ledger.NotableBattles() .. " battles|r"
         .. sep .. Theme.BAD .. l.fallen .. " fallen|r")
 end
 
