@@ -144,7 +144,7 @@ KKC.Listen("Init", function()
     KKC.db.rollcalls = KKC.db.rollcalls or {}
     if C_Timer then C_Timer.After(60, tick) end
 end)
-KKC.On("PLAYER_REGEN_DISABLED", function() if KKC.db then RollCall.Take(false) end end)
+KKC.On("PLAYER_REGEN_DISABLED", function() if KKC.db and KKC.InWorld() then RollCall.Take(false) end end)
 KKC.Listen("EngagementClosed", function() RollCall.Take(false) end)
 
 -- ------------------------------------------------------------------------------------------------

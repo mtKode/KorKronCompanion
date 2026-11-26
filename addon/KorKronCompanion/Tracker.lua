@@ -170,6 +170,7 @@ local OPEN_WINDOW = 5
 local lastOffense = -100
 
 local function noteOffense()
+    if not KKC.InWorld() then return end
     local isPlayer = KKC.try(UnitIsPlayer, "target")
     local canAttack = KKC.try(UnitCanAttack, "player", "target")
     if KKC.readable(isPlayer) and isPlayer and KKC.readable(canAttack) and canAttack then lastOffense = GetTime() end
@@ -484,6 +485,7 @@ end
 KKC.On("PLAYER_REGEN_DISABLED", function()
     if seg then return end
     seg = newSegment()
+    if seg.skip then return end -- a battleground or dungeon: nothing to read, nothing to sample
     seg.groupStart = KKC.try(groupInfo)
     seg.opened = GetTime() - lastOffense <= OPEN_WINDOW
     seg.map, seg.x, seg.y = where()
@@ -510,6 +512,7 @@ end)
 local function activeSegment() return seg or lastSeg end
 
 KKC.On("CHAT_MSG_COMBAT_HONOR_GAIN", function(text)
+    if not KKC.InWorld() then return end
     local victim = T.ParseHonor(text)
     if not victim then return end
     remember("target") -- often the victim; fills race/class while it's still targeted
@@ -533,6 +536,7 @@ end)
 -- addons (Overlord found the same), so PARTY_KILL (attackerGUID, targetGUID) is the main source of kills. Either GUID
 -- can be secret: a kill whose victim can't be named still counts towards the slain total.
 KKC.On("PARTY_KILL", function(attacker, target)
+    if not KKC.InWorld() then return end
     if KKC.readable(target) and not isPlayerGUID(target) then return end -- an NPC
     local mine = KKC.readable(attacker) and attacker == KKC.try(UnitGUID, "player")
     local s = activeSegment()
@@ -555,6 +559,7 @@ end)
 
 -- Enemy players you target or focus during combat take part in the fight.
 local function engageUnit(unit)
+    if not KKC.InWorld() then return end
     local name = remember(unit)
     if name and seg then
         enemyOf(seg, name)
@@ -580,7 +585,7 @@ end
 
 local scanning = false
 local function scanPlates()
-    if not seg then scanning = false; return end
+    if not seg or seg.skip then scanning = false; return end
     for i = 1, 40 do
         local unit = "nameplate" .. i
         local exists = KKC.try(UnitExists, unit)
@@ -597,8 +602,9 @@ end)
 
 KKC.On("PLAYER_TARGET_CHANGED", function() engageUnit("target") end)
 KKC.On("PLAYER_FOCUS_CHANGED", function() engageUnit("focus") end)
-KKC.On("UPDATE_MOUSEOVER_UNIT", function() remember("mouseover") end)
-KKC.On("NAME_PLATE_UNIT_ADDED", function(unit) remember(unit) end)
+-- Not inside an instance: a battleground shows dozens of nameplates a second, and nothing there is logged.
+KKC.On("UPDATE_MOUSEOVER_UNIT", function() if KKC.InWorld() then remember("mouseover") end end)
+KKC.On("NAME_PLATE_UNIT_ADDED", function(unit) if KKC.InWorld() then remember(unit) end end)
 
 KKC.On("PLAYER_LOGOUT", function()
     if lastSeg then finishSegment(lastSeg) end

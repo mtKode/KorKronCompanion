@@ -16,14 +16,24 @@ KKC.raw = {} -- last raw names seen per source (honor, meter, sender), for /kkc 
 -- Small helpers
 -- ------------------------------------------------------------------------------------------------
 
-local function pack(...) return { n = select("#", ...), ... } end
+local function passOn(ok, ...) if ok then return ... end end
 
--- Calls f safely; returns its results, or nothing when f is missing or errors.
+-- Calls f safely; returns its results, or nothing when f is missing or errors. No table per call: it runs for every
+-- unit the addon looks at, so garbage here means stutters in a crowded fight.
 function KKC.try(f, ...)
     if type(f) ~= "function" then return end
-    local r = pack(pcall(f, ...))
-    if r[1] then return unpack(r, 2, r.n) end
+    return passOn(pcall(f, ...))
 end
+
+-- In the open world (not a battleground, arena or dungeon), kept up to date as you zone. Everything the addon tracks
+-- is world PvP, so inside an instance it does nothing at all: a battleground is 40 players in constant combat.
+local openWorld = true
+function KKC.InWorld() return openWorld end
+local function checkWorld()
+    local inside, kind = IsInInstance()
+    openWorld = not inside and (kind == nil or kind == "none")
+end
+KKC.CheckWorld = checkWorld
 
 -- True when v is a normal value this addon may use (not nil, not a secret).
 -- Map positions as world positions (yards, per continent), so two fights in different zones can be compared: a
@@ -331,6 +341,8 @@ end)
 -- Everyone in your guild by name, from the guild roster: tells a guildmate when the unit can't (outside your group,
 -- or the guild flag unreadable). Asked for at login; the game sends updates as people come and go.
 local guildNames = {}
+local rosterRead, rosterQueued = 0, false
+local ROSTER_EVERY = 30 -- seconds: the game sends roster updates all the time in a big guild
 local function readRoster()
     local n = KKC.try(GetNumGuildMembers)
     if not (KKC.readable(n) and type(n) == "number" and n > 0) then return end
@@ -343,12 +355,23 @@ local function readRoster()
         end
     end
     guildNames = names
+    rosterRead = GetTime()
 end
 function KKC.IsGuildmate(name) return name ~= nil and guildNames[name] == true end
-KKC.On("GUILD_ROSTER_UPDATE", readRoster)
+-- At most once every ROSTER_EVERY seconds, and not in combat or inside an instance: updates in between wait.
+local function queueRoster()
+    if rosterQueued then return end
+    local wait = rosterRead + ROSTER_EVERY - GetTime()
+    if wait <= 0 and openWorld and not (InCombatLockdown and InCombatLockdown()) then return readRoster() end
+    rosterQueued = true
+    C_Timer.After(math.max(wait, 5), function() rosterQueued = false; queueRoster() end)
+end
+KKC.On("GUILD_ROSTER_UPDATE", queueRoster)
 KKC.On("PLAYER_ENTERING_WORLD", function()
-    if IsInGuild() then KKC.try((C_GuildInfo and C_GuildInfo.GuildRoster) or GuildRoster) end
+    checkWorld()
+    if IsInGuild() and openWorld then KKC.try((C_GuildInfo and C_GuildInfo.GuildRoster) or GuildRoster) end
 end)
+KKC.On("ZONE_CHANGED_NEW_AREA", checkWorld)
 
 -- Internal callbacks between modules ("EngagementClosed", "EngagementUpdated", ...).
 local callbacks = {}
